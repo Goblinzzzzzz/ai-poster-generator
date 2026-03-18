@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --color-ink: #0d0e13;
+  --color-panel: rgba(18, 19, 26, 0.76);
+  --color-panel-strong: rgba(24, 26, 36, 0.94);
+  --color-paper: #f3f1e8;
+  --color-muted: #bdb7ab;
+  --color-accent: #f97316;
+  --color-accent-soft: #ffb36b;
+  --color-line: rgba(255, 255, 255, 0.1);
+  font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--color-ink);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-[28px] border border-white/10 bg-[var(--color-panel)] shadow-[0_24px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl;
+  }
+
+  .eyebrow {
+    @apply text-xs uppercase tracking-[0.32em] text-[var(--color-accent-soft)];
+  }
+
+  .logo-mark {
+    @apply inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-[var(--color-panel-strong)] text-sm tracking-[0.18em];
+  }
+
+  .nav-link {
+    @apply transition duration-200 hover:text-[var(--color-paper)];
+  }
+
+  .cta-button {
+    @apply inline-flex items-center justify-center rounded-full border border-[var(--color-accent)] bg-[var(--color-accent)] px-5 py-3 text-sm font-medium text-[#140f0a] transition duration-200 hover:brightness-110;
+  }
+
+  .secondary-button {
+    @apply inline-flex items-center justify-center rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-medium text-[var(--color-paper)] transition duration-200 hover:bg-white/10;
+  }
+
+  .metric-card {
+    @apply rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4 text-sm leading-6 text-[var(--color-paper)];
+  }
+
+  .info-card {
+    @apply rounded-[24px] border border-white/10 bg-white/[0.035] p-5;
+  }
+
+  .info-card h2 {
+    @apply mt-4 text-xl text-[var(--color-paper)];
+  }
+
+  .info-card p {
+    @apply mt-2 text-sm leading-6 text-[var(--color-muted)];
+  }
+
+  .step-index {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-xs tracking-[0.24em] text-[var(--color-accent-soft)];
+  }
+
+  .status-pill {
+    @apply rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs uppercase tracking-[0.22em] text-emerald-200;
+  }
+
+  .field-group {
+    @apply flex flex-col gap-2 text-sm text-[var(--color-muted)];
+  }
+
+  .field-group span {
+    @apply uppercase tracking-[0.22em];
+  }
+
+  .input-shell {
+    @apply w-full rounded-[22px] border border-white/10 bg-black/20 px-4 py-3 text-[var(--color-paper)] outline-none transition duration-200 placeholder:text-white/30 focus:border-[var(--color-accent)] focus:bg-black/30;
+  }
+
+  .prompt-chip {
+    @apply rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--color-paper)] transition duration-200 hover:border-[var(--color-accent)] hover:text-[var(--color-accent-soft)];
+  }
+
+  .poster-frame {
+    @apply rounded-[30px] border border-white/10 bg-[linear-gradient(160deg,_rgba(243,241,232,0.06),_rgba(255,255,255,0.01))] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)];
+  }
+
+  .poster-card {
+    @apply flex min-h-[28rem] flex-col justify-between rounded-[24px] border border-black/30 bg-[linear-gradient(155deg,_rgba(249,115,22,0.92)_0%,_rgba(115,58,18,0.88)_38%,_rgba(13,14,19,0.98)_100%)] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)];
+  }
+
+  .poster-kicker {
+    @apply text-xs uppercase tracking-[0.4em] text-[#f6d8be];
+  }
+
+  .poster-title {
+    @apply max-w-xs text-5xl font-semibold leading-[0.86] tracking-[-0.06em] text-[var(--color-paper)] sm:text-6xl;
+  }
+
+  .poster-copy {
+    @apply mt-4 max-w-sm text-sm leading-6 text-[#f7eadf];
+  }
+
+  .poster-meta {
+    @apply flex flex-wrap gap-2 text-xs uppercase tracking-[0.24em] text-[#f6d8be];
+  }
+
+  .poster-meta span {
+    @apply rounded-full border border-white/15 bg-black/20 px-3 py-2;
+  }
+
+  .mini-card {
+    @apply rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3;
+  }
+
+  .mini-card span {
+    @apply block text-xs uppercase tracking-[0.22em] text-[var(--color-muted)];
+  }
+
+  .mini-card strong {
+    @apply mt-2 block text-sm font-medium text-[var(--color-paper)];
+  }
+}
