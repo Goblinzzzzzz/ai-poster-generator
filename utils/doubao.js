@@ -7,9 +7,10 @@ import {
   resolveDoubaoApiKey,
 } from "./env.js";
 
-const DEFAULT_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/images/generations";
+// 默认端点和模型仅作为 fallback，优先使用环境变量
+const DEFAULT_ENDPOINT = process.env.DOUBAO_API_ENDPOINT || "https://ark.cn-beijing.volces.com/api/v3/images/generations";
 const DEFAULT_ENDPOINT_PATH = "/api/v3/images/generations";
-const DEFAULT_MODEL = "doubao-seedream-4-0-250828";
+const DEFAULT_MODEL = process.env.DOUBAO_MODEL || "doubao-seedream-4-0-250828";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_IMAGE_MIME_TYPE = "image/png";

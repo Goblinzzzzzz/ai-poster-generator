@@ -55,18 +55,39 @@ npm test
 npm run build
 ```
 
-## Railway
+## Railway 部署
 
-The repository includes `railway.json`, `Procfile`, and `.env.example`. Railway will install dependencies, build the Vite app, and run `server.js`.
+### 环境变量配置（必须）
 
-Set backend variables in Railway exactly as named below. They are case-sensitive:
+在 Railway Dashboard → Variables 中配置以下环境变量：
 
-- `DOUBAO_API_KEY`
-- `DOUBAO_MODEL` (optional)
-- `DOUBAO_API_ENDPOINT` (optional)
-- `GENERATE_RATE_LIMIT_WINDOW_MS` (optional)
-- `GENERATE_RATE_LIMIT_MAX_REQUESTS` (optional)
-- `CORS_ORIGIN` (optional)
-- `UPLOAD_DIR` (optional)
+**必需变量：**
+- `DOUBAO_API_KEY` - Volcano Engine / Doubao API 密钥（从火山引擎控制台获取）
 
-`VITE_POSTER_API_URL` must point to your app backend `/api/generate` endpoint. The frontend does not call Doubao directly and does not replace `DOUBAO_API_KEY`.
+**可选变量（有合理默认值）：**
+- `DOUBAO_MODEL` - 模型名称，默认 `doubao-seedream-4-0-250828`
+- `DOUBAO_API_ENDPOINT` - API 端点，默认 `https://ark.cn-beijing.volces.com/api/v3/images/generations`
+- `GENERATE_RATE_LIMIT_WINDOW_MS` - 限流时间窗口（毫秒），默认 `60000`
+- `GENERATE_RATE_LIMIT_MAX_REQUESTS` - 限流请求数，默认 `5`
+- `CORS_ORIGIN` - 允许的前端域名，默认允许所有
+- `UPLOAD_DIR` - 临时文件存储目录，默认 `/tmp/ai-poster-generator-uploads`
+- `PORT` - 服务端口，默认 `3000`（Railway 自动管理）
+
+**前端变量（构建时使用）：**
+- `VITE_POSTER_API_URL` - 前端调用后端的 URL，生产环境设置为 `https://[你的域名].railway.app/api/generate`
+- `VITE_APP_NAME` - 应用名称，默认 `AI Poster Generator`
+- `VITE_DEFAULT_STYLE` - 默认风格，默认 `Editorial Neon`
+
+### 部署步骤
+
+1. 连接 GitHub 仓库到 Railway
+2. 在 Railway Dashboard → Variables 中添加环境变量
+3. Railway 会自动构建和部署
+4. 检查健康检查：访问 `https://[你的域名].railway.app/api/health`
+
+### 注意事项
+
+- ✅ **所有 API 配置通过环境变量管理，代码中无硬编码**
+- ✅ `DOUBAO_API_KEY` 仅在服务端使用，不会暴露给前端
+- ✅ 前端通过 `VITE_POSTER_API_URL` 调用后端，不直接调用 Doubao
+- ✅ 健康检查路径为 `/api/health`
