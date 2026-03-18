@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+
+const API_ENDPOINT = import.meta.env.VITE_POSTER_API_URL || '/api/generate'
+const ONE_MB = 1024 * 1024
 
 const POSTER_TYPES = [
   { id: 'training', name: '培训海报', icon: '📚', desc: '专业培训、讲座、研讨会' },
@@ -47,6 +50,64 @@ const WORKFLOW_STEPS = [
   },
 ]
 
+const PREVIEW_ASPECTS = {
+  mobile: '1080 / 1920',
+  a4: '2480 / 3508',
+  wechat_cover: '900 / 383',
+  wechat_sub: '900 / 500',
+  weibo: '1 / 1',
+}
+
+const UPLOAD_RULES = {
+  logo: {
+    limit: 5 * ONE_MB,
+    label: 'Logo 文件',
+    error: 'Logo 文件大小不能超过 5MB',
+  },
+  referenceImage: {
+    limit: 10 * ONE_MB,
+    label: '参考图',
+    error: '参考图文件大小不能超过 10MB',
+  },
+}
+
+const normalizeImageSrc = (value) => {
+  const normalized = String(value || '').trim()
+
+  if (!normalized) {
+    return ''
+  }
+
+  if (
+    normalized.startsWith('data:image/') ||
+    normalized.startsWith('http://') ||
+    normalized.startsWith('https://') ||
+    normalized.startsWith('blob:') ||
+    normalized.startsWith('/')
+  ) {
+    return normalized
+  }
+
+  return `data:image/png;base64,${normalized.replace(/^base64,/, '')}`
+}
+
+const inferFileExtension = (value) => {
+  const normalized = String(value || '').trim()
+
+  if (normalized.startsWith('data:image/')) {
+    const mimeType = normalized.slice('data:'.length, normalized.indexOf(';'))
+    return mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'png'
+  }
+
+  try {
+    const pathname = new URL(normalized, window.location.origin).pathname
+    const match = pathname.match(/\.([a-zA-Z0-9]+)$/)
+    return match?.[1]?.toLowerCase() || 'png'
+  } catch {
+    return 'png'
+  }
+}
+
 function App() {
   const [posterType, setPosterType] = useState('training')
   const [sizeTemplate, setSizeTemplate] = useState('mobile')
@@ -61,23 +122,113 @@ function App() {
   const [logoPosition, setLogoPosition] = useState('auto')
 
   const [loading, setLoading] = useState(false)
-  const [generatedImage, setGeneratedImage] = useState(null)
+  const [generatedImage, setGeneratedImage] = useState('')
+  const [previewReady, setPreviewReady] = useState(false)
   const [error, setError] = useState(null)
   const [successMessage, setSuccessMessage] = useState(null)
+  const [toast, setToast] = useState(null)
+  const [dragTarget, setDragTarget] = useState(null)
 
   const selectedPosterType = POSTER_TYPES.find((type) => type.id === posterType)
   const selectedSizeTemplate = SIZE_TEMPLATES.find((size) => size.id === sizeTemplate)
   const titleError = error === '请输入海报标题'
 
+  useEffect(() => {
+    if (!toast) {
+      return undefined
+    }
+
+    const timeout = window.setTimeout(() => {
+      setToast(null)
+    }, 4200)
+
+    return () => window.clearTimeout(timeout)
+  }, [toast])
+
+  const showError = (message, titleText = '生成异常') => {
+    setError(message)
+    setSuccessMessage(null)
+    setToast({
+      id: Date.now(),
+      title: titleText,
+      message,
+    })
+  }
+
+  const clearFeedback = () => {
+    setError(null)
+    setToast(null)
+  }
+
+  const applyUploadedFile = (kind, file) => {
+    if (!file) {
+      return
+    }
+
+    const rule = UPLOAD_RULES[kind]
+
+    if (!rule) {
+      return
+    }
+
+    if (file.size > rule.limit) {
+      showError(rule.error, `${rule.label}上传失败`)
+      return
+    }
+
+    clearFeedback()
+
+    if (kind === 'logo') {
+      setLogo(file)
+      return
+    }
+
+    setReferenceImage(file)
+  }
+
+  const handleFileChange = (kind) => (event) => {
+    const file = event.target.files?.[0]
+    applyUploadedFile(kind, file)
+    event.target.value = ''
+  }
+
+  const handleDragEnter = (kind) => (event) => {
+    event.preventDefault()
+    setDragTarget(kind)
+  }
+
+  const handleDragLeave = (kind) => (event) => {
+    event.preventDefault()
+
+    if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) {
+      return
+    }
+
+    setDragTarget((current) => (current === kind ? null : current))
+  }
+
+  const handleDragOver = (kind) => (event) => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setDragTarget(kind)
+  }
+
+  const handleDrop = (kind) => (event) => {
+    event.preventDefault()
+    setDragTarget(null)
+    const file = event.dataTransfer.files?.[0]
+    applyUploadedFile(kind, file)
+  }
+
   const handleGenerate = async () => {
     if (!title.trim()) {
-      setError('请输入海报标题')
-      setSuccessMessage(null)
+      showError('请输入海报标题', '表单校验失败')
       return
     }
 
     setLoading(true)
-    setError(null)
+    setPreviewReady(false)
+    clearFeedback()
     setSuccessMessage(null)
 
     try {
@@ -94,73 +245,92 @@ function App() {
       if (logo) formData.append('logo', logo)
       if (referenceImage) formData.append('referenceImage', referenceImage)
 
-      const response = await fetch('/api/generate', {
+      const response = await fetch(API_ENDPOINT, {
         method: 'POST',
         body: formData,
       })
 
+      const payload = await response.json().catch(() => null)
+
       if (!response.ok) {
-        const errorPayload = await response.json().catch(() => null)
-        throw new Error(errorPayload?.error?.message || '生成失败，请稍后重试')
+        throw new Error(payload?.error?.message || '生成失败，请稍后重试')
       }
 
-      const data = await response.json()
-      const imageUrl = data.imageUrl || data.data?.imageUrl || null
-      setGeneratedImage(imageUrl)
-      setSuccessMessage(imageUrl ? '海报生成成功，可直接预览或下载。' : '任务已完成。')
+      const nextImage = normalizeImageSrc(
+        payload?.imageUrl || payload?.data?.imageUrl || payload?.data?.b64_json || '',
+      )
+
+      if (!nextImage) {
+        throw new Error('Doubao 返回了空图片，请重试')
+      }
+
+      setGeneratedImage(nextImage)
+      setSuccessMessage('海报生成成功，可直接预览或下载。')
     } catch (err) {
-      setError(err.message || '生成失败，请检查网络连接')
-      setSuccessMessage(null)
+      setGeneratedImage('')
+      setPreviewReady(false)
+      showError(err.message || '生成失败，请检查网络连接')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDownload = () => {
-    if (generatedImage) {
+  const handleDownload = async () => {
+    if (!generatedImage) {
+      return
+    }
+
+    const fileExtension = inferFileExtension(generatedImage)
+    const fileName = `海报-${Date.now()}.${fileExtension}`
+
+    try {
+      const response = await fetch(generatedImage)
+
+      if (!response.ok) {
+        throw new Error('下载资源获取失败')
+      }
+
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = fileName
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    } catch {
       const link = document.createElement('a')
       link.href = generatedImage
-      const extension = generatedImage.startsWith('data:image/svg+xml') ? 'svg' : 'png'
-      link.download = `海报-${Date.now()}.${extension}`
+      link.download = fileName
       link.click()
-      setSuccessMessage('下载已开始，请查看浏览器下载列表。')
     }
+
+    setSuccessMessage('下载已开始，请查看浏览器下载列表。')
   }
 
-  const handleLogoUpload = (e) => {
-    const file = e.target.files[0]
-
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setError('Logo 文件大小不能超过 5MB')
-        setSuccessMessage(null)
-        return
-      }
-
-      setLogo(file)
-      setError(null)
-    }
-  }
-
-  const handleReferenceUpload = (e) => {
-    const file = e.target.files[0]
-
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        setError('参考图文件大小不能超过 10MB')
-        setSuccessMessage(null)
-        return
-      }
-
-      setReferenceImage(file)
-      setError(null)
-    }
+  const handlePreviewError = () => {
+    setGeneratedImage('')
+    setPreviewReady(false)
+    showError('生成结果无法预览，请重新生成。')
   }
 
   return (
     <div className="app-shell">
       <div className="app-bg-orb app-bg-orb-left" />
       <div className="app-bg-orb app-bg-orb-right" />
+
+      {toast && (
+        <div className="toast-stack">
+          <div className="toast-card toast-card-error" role="alert" aria-live="assertive">
+            <div className="toast-card-copy">
+              <strong>{toast.title}</strong>
+              <span>{toast.message}</span>
+            </div>
+            <button type="button" onClick={() => setToast(null)} className="toast-dismiss" aria-label="关闭提示">
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       <header className="topbar">
         <div className="shell-container topbar-inner">
@@ -281,10 +451,10 @@ function App() {
                   <input
                     type="text"
                     value={title}
-                    onChange={(e) => setTitle(e.target.value)}
+                    onChange={(event) => setTitle(event.target.value)}
                     placeholder="输入海报标题（最多 50 字）"
                     maxLength={50}
-                    className={`field-input ${titleError ? 'field-input-error' : ''}`}
+                    className={`field-input ${titleError ? 'field-input-error' : title ? 'field-input-success' : ''}`}
                   />
                   <span className="field-meta">{title.length}/50</span>
                 </label>
@@ -293,7 +463,7 @@ function App() {
                   <span className="field-label">副标题/正文</span>
                   <textarea
                     value={subtitle}
-                    onChange={(e) => setSubtitle(e.target.value)}
+                    onChange={(event) => setSubtitle(event.target.value)}
                     placeholder="输入副标题或正文内容（最多 200 字）"
                     maxLength={200}
                     rows={4}
@@ -323,7 +493,7 @@ function App() {
                   <input
                     type="text"
                     value={styleDesc}
-                    onChange={(e) => setStyleDesc(e.target.value)}
+                    onChange={(event) => setStyleDesc(event.target.value)}
                     placeholder="如：简约商务风，蓝色主色调"
                     className="field-input"
                   />
@@ -341,29 +511,41 @@ function App() {
               </div>
 
               <div className="upload-grid">
-                <label className={`upload-card ${logo ? 'upload-card-complete' : ''}`}>
+                <label
+                  className={`upload-card ${logo ? 'upload-card-complete' : ''} ${dragTarget === 'logo' ? 'upload-card-dragging' : ''}`}
+                  onDragEnter={handleDragEnter('logo')}
+                  onDragLeave={handleDragLeave('logo')}
+                  onDragOver={handleDragOver('logo')}
+                  onDrop={handleDrop('logo')}
+                >
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={handleLogoUpload}
+                    onChange={handleFileChange('logo')}
                     className="sr-only"
                   />
                   <span className="upload-badge">{logo ? '已上传' : '必填'}</span>
                   <strong>Logo 文件</strong>
-                  <small>支持 PNG / JPG，大小不超过 5MB</small>
+                  <small>支持 PNG / JPG，大小不超过 5MB。可拖拽到此处上传。</small>
                   <span className="upload-file">{logo ? logo.name : '点击选择品牌 Logo'}</span>
                 </label>
 
-                <label className={`upload-card ${referenceImage ? 'upload-card-complete' : ''}`}>
+                <label
+                  className={`upload-card ${referenceImage ? 'upload-card-complete' : ''} ${dragTarget === 'referenceImage' ? 'upload-card-dragging' : ''}`}
+                  onDragEnter={handleDragEnter('referenceImage')}
+                  onDragLeave={handleDragLeave('referenceImage')}
+                  onDragOver={handleDragOver('referenceImage')}
+                  onDrop={handleDrop('referenceImage')}
+                >
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={handleReferenceUpload}
+                    onChange={handleFileChange('referenceImage')}
                     className="sr-only"
                   />
                   <span className="upload-badge upload-badge-optional">可选</span>
                   <strong>参考图</strong>
-                  <small>支持 PNG / JPG，大小不超过 10MB</small>
+                  <small>支持 PNG / JPG，大小不超过 10MB。可拖拽到此处上传。</small>
                   <span className="upload-file">
                     {referenceImage ? referenceImage.name : '上传参考图辅助控制风格'}
                   </span>
@@ -393,7 +575,7 @@ function App() {
                     <span className="field-label">自定义 Prompt</span>
                     <textarea
                       value={customPrompt}
-                      onChange={(e) => setCustomPrompt(e.target.value)}
+                      onChange={(event) => setCustomPrompt(event.target.value)}
                       placeholder="自定义 Prompt 将覆盖系统自动生成（最多 1000 字）"
                       maxLength={1000}
                       rows={4}
@@ -407,7 +589,7 @@ function App() {
                     <input
                       type="text"
                       value={negativePrompt}
-                      onChange={(e) => setNegativePrompt(e.target.value)}
+                      onChange={(event) => setNegativePrompt(event.target.value)}
                       placeholder="如：不要文字、不要人物、不要低清晰度"
                       className="field-input"
                     />
@@ -417,7 +599,7 @@ function App() {
                     <span className="field-label">Logo 位置</span>
                     <select
                       value={logoPosition}
-                      onChange={(e) => setLogoPosition(e.target.value)}
+                      onChange={(event) => setLogoPosition(event.target.value)}
                       className="field-input field-select"
                     >
                       <option value="auto">自动（推荐）</option>
@@ -458,6 +640,7 @@ function App() {
                 onClick={handleGenerate}
                 disabled={loading}
                 className={`primary-cta ${loading ? 'primary-cta-loading' : ''}`}
+                aria-busy={loading}
               >
                 {loading ? (
                   <>
@@ -469,15 +652,8 @@ function App() {
                 )}
               </button>
 
-              {error && (
-                <div className="alert-banner alert-error">
-                  <strong>生成异常</strong>
-                  <span>{error}</span>
-                </div>
-              )}
-
               {successMessage && !error && (
-                <div className="alert-banner alert-success">
+                <div className="alert-banner alert-success" role="status">
                   <strong>操作成功</strong>
                   <span>{successMessage}</span>
                 </div>
@@ -492,12 +668,15 @@ function App() {
                   <span className="section-kicker">LIVE PREVIEW</span>
                   <h2>生成结果预览</h2>
                 </div>
-                <span className={`status-pill ${loading ? 'status-pill-busy' : ''}`}>
+                <span className={`status-pill ${loading ? 'status-pill-busy' : generatedImage ? 'status-pill-ready' : ''}`}>
                   {loading ? 'Rendering' : generatedImage ? 'Completed' : 'Waiting'}
                 </span>
               </div>
 
-              <div className="preview-stage">
+              <div
+                className="preview-stage"
+                style={{ '--preview-aspect': PREVIEW_ASPECTS[sizeTemplate] || PREVIEW_ASPECTS.mobile }}
+              >
                 {loading ? (
                   <div className="preview-loading">
                     <div className="preview-glow" />
@@ -507,7 +686,21 @@ function App() {
                     <div className="preview-skeleton preview-skeleton-footer" />
                   </div>
                 ) : generatedImage ? (
-                  <img src={generatedImage} alt="生成的海报" className="preview-image" />
+                  <div className={`preview-frame ${previewReady ? 'preview-frame-ready' : ''}`}>
+                    {!previewReady && (
+                      <div className="preview-image-loading">
+                        <span className="preview-loader-ring" />
+                        <span>海报载入中...</span>
+                      </div>
+                    )}
+                    <img
+                      src={generatedImage}
+                      alt="生成的海报"
+                      className={`preview-image ${previewReady ? 'preview-image-visible' : ''}`}
+                      onLoad={() => setPreviewReady(true)}
+                      onError={handlePreviewError}
+                    />
+                  </div>
                 ) : (
                   <div className="preview-placeholder">
                     <span className="preview-placeholder-icon">✦</span>

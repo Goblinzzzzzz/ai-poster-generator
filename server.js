@@ -44,7 +44,7 @@ export const createApp = () => {
       data: {
         status: "ok",
         uploadDir,
-        provider: process.env.DOUBAO_API_KEY ? "doubao-seed" : "local-fallback",
+        provider: process.env.DOUBAO_API_KEY ? "doubao-seed" : "unconfigured",
       },
     });
   });

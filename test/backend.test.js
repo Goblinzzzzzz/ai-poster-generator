@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ApiError, validateGeneratePayload, validateUploadedFile } from "../api/generate.js";
-import { createDoubaoRequestBody, generatePoster } from "../utils/doubao.js";
+import { createDoubaoRequestBody, generatePoster, resolveImageSize } from "../utils/doubao.js";
 import { buildPrompt } from "../utils/prompt-builder.js";
 
 test("buildPrompt creates the default structured prompt", () => {
@@ -21,6 +21,8 @@ test("buildPrompt creates the default structured prompt", () => {
   assert.match(result.prompt, /请生成一张节日海报/);
   assert.match(result.prompt, /周年庆典/);
   assert.match(result.prompt, /不要人物/);
+  assert.match(result.prompt, /包含 Logo：是/);
+  assert.match(result.prompt, /已上传参考图/);
   assert.equal(result.metadata.sizeLabel, "1000×1000（微博海报）");
 });
 
@@ -73,35 +75,38 @@ test("createDoubaoRequestBody includes negative prompt in the user message", () 
   const body = createDoubaoRequestBody({
     prompt: "生成海报",
     negativePrompt: "不要低清晰度",
+    sizeTemplate: "mobile",
   });
 
-  assert.equal(body.model, "doubao-seed-2.0");
-  assert.match(body.messages[1].content, /不要低清晰度/);
+  assert.equal(body.model, "doubao-seedream-4-0-250828");
+  assert.equal(body.response_format, "b64_json");
+  assert.equal(body.size, "1024x1792");
+  assert.match(body.prompt, /不要低清晰度/);
 });
 
-test("generatePoster returns local fallback when API key is missing", async () => {
-  const result = await generatePoster({
-    prompt: "生成培训海报",
-    apiKey: "",
-    fallbackInput: {
-      posterType: "training",
-      sizeTemplate: "mobile",
-      title: "培训通知",
-      subtitle: "周五下午两点",
-      styleDesc: "专业严谨",
-    },
-  });
-
-  assert.equal(result.provider, "local-fallback");
-  assert.match(result.imageUrl, /^data:image\/svg\+xml;base64,/);
+test("resolveImageSize keeps poster ratios within the supported range", () => {
+  assert.equal(resolveImageSize("mobile"), "1024x1792");
+  assert.equal(resolveImageSize("wechat_cover"), "1792x768");
 });
 
-test("generatePoster retries and extracts image url from JSON content", async () => {
+test("generatePoster rejects requests when API key is missing", async () => {
+  await assert.rejects(
+    () =>
+      generatePoster({
+        prompt: "生成培训海报",
+        apiKey: "",
+      }),
+    /DOUBAO_API_KEY 未配置/,
+  );
+});
+
+test("generatePoster retries and extracts a data url from b64_json", async () => {
   let attempts = 0;
 
   const result = await generatePoster({
     prompt: "生成品牌海报",
     apiKey: "test-key",
+    sizeTemplate: "weibo",
     maxRetries: 3,
     sleepImpl: async () => {},
     fetchImpl: async () => {
@@ -113,13 +118,10 @@ test("generatePoster retries and extracts image url from JSON content", async ()
 
       return new Response(
         JSON.stringify({
-          choices: [
+          data: [
             {
-              message: {
-                content: JSON.stringify({
-                  imageUrl: "https://cdn.example.com/poster.png",
-                }),
-              },
+              b64_json: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9s4P4n8AAAAASUVORK5CYII=",
+              mime_type: "image/png",
             },
           ],
         }),
@@ -133,5 +135,5 @@ test("generatePoster retries and extracts image url from JSON content", async ()
 
   assert.equal(attempts, 3);
   assert.equal(result.provider, "doubao-seed");
-  assert.equal(result.imageUrl, "https://cdn.example.com/poster.png");
+  assert.match(result.imageUrl, /^data:image\/png;base64,/);
 });

@@ -26,9 +26,9 @@ const normalizeModel = (value) => {
 
 const clampImageSize = (width, height, maxSide = 1792) => {
   const longestSide = Math.max(width, height);
-  const scale = longestSide > maxSide ? maxSide / longestSide : 1;
-  const normalizedWidth = Math.max(512, Math.round((width * scale) / 32) * 32);
-  const normalizedHeight = Math.max(512, Math.round((height * scale) / 32) * 32);
+  const scale = maxSide / longestSide;
+  const normalizedWidth = Math.max(256, Math.round((width * scale) / 32) * 32);
+  const normalizedHeight = Math.max(256, Math.round((height * scale) / 32) * 32);
 
   return `${normalizedWidth}x${normalizedHeight}`;
 };

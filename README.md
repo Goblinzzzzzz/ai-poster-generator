@@ -7,7 +7,7 @@ React 18 + Vite frontend with an Express backend for poster generation, Doubao-S
 - React 18
 - Vite
 - Express + Multer + CORS + dotenv
-- Doubao-Seed API with a local SVG fallback when `DOUBAO_API_KEY` is not configured
+- Doubao Seedream image generation API via `POST /api/v3/images/generations`
 
 ## Local development
 
@@ -27,6 +27,8 @@ npm run start
 Copy `.env.example` to `.env` and set:
 
 - `DOUBAO_API_KEY`: Volcano Engine / Doubao API key
+- `DOUBAO_MODEL`: optional image model override, defaults to `doubao-seedream-4-0-250828`
+- `DOUBAO_API_ENDPOINT`: optional endpoint override, defaults to `https://ark.cn-beijing.volces.com/api/v3/images/generations`
 - `CORS_ORIGIN`: allowed frontend origin
 - `UPLOAD_DIR`: temporary upload storage directory
 
@@ -38,7 +40,7 @@ Copy `.env.example` to `.env` and set:
 - `POST /api/upload`
   Accepts `file`, `logo`, or `referenceImage` and returns a public upload URL.
 - `GET /api/health`
-  Returns backend health plus the active provider mode.
+  Returns backend health plus the provider status (`doubao-seed` or `unconfigured`).
 
 Uploads are served from `/uploads/*` and cleaned up after 24 hours.
 
