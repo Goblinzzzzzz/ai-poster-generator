@@ -1,4 +1,6 @@
 export const DOUBAO_API_KEY_ENV_NAMES = ["DOUBAO_API_KEY", "DOUBAO_KEY", "API_KEY"];
+const UUID_LIKE_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const normalizeEnvValue = (value) => (typeof value === "string" ? value.trim() : value);
 
@@ -35,6 +37,37 @@ export const describeEnvValue = (value) => {
 
 export const getEnvironmentVariableDiagnostics = (variableNames, env = process.env) =>
   Object.fromEntries(variableNames.map((variableName) => [variableName, describeEnvValue(env[variableName])]));
+
+export const describeApiKeyFormat = (value) => {
+  const rawValue = value === undefined ? undefined : String(value);
+  const normalizedValue = typeof rawValue === "string" ? rawValue.trim() : rawValue;
+  const hasValue = Boolean(normalizedValue);
+  const normalizedString = hasValue ? String(normalizedValue) : "";
+  const segments = normalizedString ? normalizedString.split("-").filter(Boolean) : [];
+
+  let format = "missing";
+
+  if (hasValue) {
+    if (UUID_LIKE_PATTERN.test(normalizedString)) {
+      format = "uuid-like";
+    } else if (/^ep-/i.test(normalizedString)) {
+      format = "endpoint-id-like";
+    } else if (/^sk-/i.test(normalizedString)) {
+      format = "secret-key-like";
+    } else {
+      format = "opaque-token";
+    }
+  }
+
+  return {
+    format,
+    hasValue,
+    trimmedLength: normalizedString.length,
+    containsWhitespace: /\s/.test(normalizedString),
+    hyphenSegmentCount: segments.length,
+    isUuidLike: UUID_LIKE_PATTERN.test(normalizedString),
+  };
+};
 
 export const resolveDoubaoApiKey = ({ env = process.env, explicitValue } = {}) => {
   const resolutionChain = [

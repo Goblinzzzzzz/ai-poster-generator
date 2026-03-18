@@ -1,6 +1,14 @@
-import { DOUBAO_API_KEY_ENV_NAMES, describeEnvValue, getEnvironmentVariableDiagnostics, normalizeEnvValue, resolveDoubaoApiKey } from "./env.js";
+import {
+  DOUBAO_API_KEY_ENV_NAMES,
+  describeApiKeyFormat,
+  describeEnvValue,
+  getEnvironmentVariableDiagnostics,
+  normalizeEnvValue,
+  resolveDoubaoApiKey,
+} from "./env.js";
 
 const DEFAULT_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/images/generations";
+const DEFAULT_ENDPOINT_PATH = "/api/v3/images/generations";
 const DEFAULT_MODEL = "doubao-seedream-4-0-250828";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RETRIES = 3;
@@ -22,7 +30,45 @@ const SIZE_TEMPLATES = {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const logDebug = (message, details) => {
-  console.log(`${DEBUG_SCOPE} ${message}`, details);
+  console.error(`${DEBUG_SCOPE} ${message}`, details);
+};
+
+const logError = (message, details) => {
+  console.error(`${DEBUG_SCOPE} ${message}`, details);
+};
+
+const getEndpointDiagnostics = (endpoint) => {
+  const normalizedEndpoint = String(endpoint || "").trim();
+
+  if (!normalizedEndpoint) {
+    return {
+      endpoint: normalizedEndpoint,
+      isValidUrl: false,
+      matchesExpectedPath: false,
+      hostname: "",
+      pathname: "",
+    };
+  }
+
+  try {
+    const parsedUrl = new URL(normalizedEndpoint);
+
+    return {
+      endpoint: normalizedEndpoint,
+      isValidUrl: true,
+      protocol: parsedUrl.protocol,
+      hostname: parsedUrl.hostname,
+      pathname: parsedUrl.pathname,
+      matchesExpectedPath: parsedUrl.pathname === DEFAULT_ENDPOINT_PATH,
+    };
+  } catch (error) {
+    return {
+      endpoint: normalizedEndpoint,
+      isValidUrl: false,
+      matchesExpectedPath: false,
+      parseError: error.message,
+    };
+  }
 };
 
 const normalizeModel = (value) => {
@@ -116,14 +162,18 @@ export const createDoubaoRequestBody = ({
   referenceImages = [],
 }) => {
   const images = Array.from(new Set(referenceImages.map(normalizeInputImage).filter(Boolean))).slice(0, 4);
+  const imageField =
+    images.length === 0 ? {} : { image: images.length === 1 ? images[0] : images };
 
   return {
     model: normalizeModel(model),
     prompt: buildGenerationPrompt({ prompt, negativePrompt }),
     response_format: responseFormat,
     size: resolveImageSize(sizeTemplate),
+    sequential_image_generation: "disabled",
+    stream: false,
     watermark: false,
-    ...(images.length > 0 ? { image: images } : {}),
+    ...imageField,
   };
 };
 
@@ -172,6 +222,7 @@ export const extractImageUrlFromResponse = (payload) => {
 
   const directCandidates = [
     payload?.imageUrl,
+    payload?.rawText,
     firstDataItem?.url,
     firstOutputItem?.url,
     payload?.output?.image?.url,
@@ -222,6 +273,41 @@ export const extractImageUrlFromResponse = (payload) => {
   return base64Match ? toDataUrl(base64Match[1], mimeType) : "";
 };
 
+const summarizePayloadShape = (payload) => ({
+  topLevelKeys: payload && typeof payload === "object" ? Object.keys(payload) : [],
+  dataLength: Array.isArray(payload?.data) ? payload.data.length : 0,
+  outputKeys: payload?.output && typeof payload.output === "object" ? Object.keys(payload.output) : [],
+  resultKeys: payload?.result && typeof payload.result === "object" ? Object.keys(payload.result) : [],
+  choiceCount: Array.isArray(payload?.choices) ? payload.choices.length : 0,
+});
+
+const maybeParseResponsePayload = async (response) => {
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  const rawText = await response.text();
+  const parsedJson = rawText ? maybeParseJson(rawText) : null;
+
+  return {
+    contentType,
+    rawText,
+    parsedJson,
+  };
+};
+
+const extractUpstreamErrorMessage = ({ payload, rawText, status }) => {
+  const messageCandidates = [
+    payload?.error?.message,
+    payload?.error?.detail,
+    payload?.message,
+    payload?.msg,
+    payload?.error_msg,
+    rawText,
+  ];
+  const message = messageCandidates.find((value) => typeof value === "string" && value.trim());
+  const normalizedMessage = message ? message.trim() : "无响应内容";
+
+  return `Doubao API 请求失败（${status}）：${normalizedMessage}`;
+};
+
 export const generatePoster = async ({
   prompt,
   negativePrompt = "",
@@ -236,6 +322,8 @@ export const generatePoster = async ({
   sleepImpl = sleep,
   requestId = "no-request-id",
 }) => {
+  const endpointDiagnostics = getEndpointDiagnostics(endpoint);
+
   logDebug("generatePoster invoked:", {
     requestId,
     promptLength: String(prompt || "").length,
@@ -243,7 +331,9 @@ export const generatePoster = async ({
     referenceImages,
     apiKeyFromCaller: describeEnvValue(apiKey),
     apiKeyFromProcessEnvCandidates: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
+    apiKeyFormatFromCaller: describeApiKeyFormat(apiKey),
     endpoint,
+    endpointDiagnostics,
     model,
     sizeTemplate,
     timeoutMs,
@@ -254,8 +344,10 @@ export const generatePoster = async ({
   logDebug("generatePoster normalized configuration:", {
     requestId,
     apiKey: describeEnvValue(apiKey),
+    apiKeyFormat: describeApiKeyFormat(apiKey),
     apiKeyResolution: resolveDoubaoApiKey({ explicitValue: apiKey }),
     endpoint,
+    endpointDiagnostics,
     model,
     sizeTemplate,
   });
@@ -266,7 +358,7 @@ export const generatePoster = async ({
   }
 
   if (!apiKey) {
-    logDebug("generatePoster rejected request because apiKey was empty:", {
+    logError("generatePoster rejected request because apiKey was empty:", {
       requestId,
       apiKeyFromCaller: describeEnvValue(apiKey),
       apiKeyFromProcessEnvCandidates: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
@@ -275,7 +367,7 @@ export const generatePoster = async ({
   }
 
   if (typeof fetchImpl !== "function") {
-    logDebug("generatePoster rejected request because fetch is unavailable:", { requestId });
+    logError("generatePoster rejected request because fetch is unavailable:", { requestId });
     throw new Error("当前运行环境不支持 fetch。");
   }
 
@@ -284,6 +376,7 @@ export const generatePoster = async ({
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+    const startedAt = Date.now();
 
     try {
       const requestBody = createDoubaoRequestBody({
@@ -299,7 +392,9 @@ export const generatePoster = async ({
         attempt,
         maxRetries,
         endpoint,
+        endpointDiagnostics,
         apiKey: describeEnvValue(apiKey),
+        apiKeyFormat: describeApiKeyFormat(apiKey),
         requestBody,
       });
       const response = await fetchImpl(endpoint, {
@@ -311,26 +406,41 @@ export const generatePoster = async ({
         body: JSON.stringify(requestBody),
         signal: abortController.signal,
       });
+      const durationMs = Date.now() - startedAt;
+      const { contentType, rawText, parsedJson } = await maybeParseResponsePayload(response);
 
       if (!response.ok) {
-        const errorBody = await response.text();
-        logDebug("Doubao API responded with an error status:", {
+        logError("Doubao API responded with an error status:", {
           requestId,
           attempt,
+          durationMs,
           status: response.status,
           statusText: response.statusText,
-          errorBody,
+          contentType,
+          responseHeaders: Object.fromEntries(response.headers.entries()),
+          payloadShape: summarizePayloadShape(parsedJson),
+          errorBodyPreview: rawText.slice(0, 2_000),
         });
-        throw new Error(`Doubao API 请求失败（${response.status}）：${errorBody || "无响应内容"}`);
+        throw new Error(
+          extractUpstreamErrorMessage({
+            payload: parsedJson,
+            rawText,
+            status: response.status,
+          }),
+        );
       }
 
-      const payload = await response.json();
+      const payload = parsedJson || { rawText };
       const imageUrl = extractImageUrlFromResponse(payload);
 
       if (!imageUrl) {
-        logDebug("Doubao API response did not include an image URL:", {
+        logError("Doubao API response did not include an image URL:", {
           requestId,
           attempt,
+          durationMs,
+          contentType,
+          payloadShape: summarizePayloadShape(parsedJson),
+          responseBodyPreview: rawText.slice(0, 2_000),
           payload,
         });
         throw new Error("Doubao API 响应中未包含图像 URL。");
@@ -339,6 +449,9 @@ export const generatePoster = async ({
       logDebug("Doubao API request succeeded:", {
         requestId,
         attempt,
+        durationMs,
+        contentType,
+        payloadShape: summarizePayloadShape(parsedJson),
         imageUrlPreview: String(imageUrl).slice(0, 120),
       });
 
@@ -350,9 +463,13 @@ export const generatePoster = async ({
       };
     } catch (error) {
       lastError = error;
-      logDebug("Doubao API request attempt failed:", {
+      logError("Doubao API request attempt failed:", {
         requestId,
         attempt,
+        endpoint,
+        endpointDiagnostics,
+        apiKey: describeEnvValue(apiKey),
+        apiKeyFormat: describeApiKeyFormat(apiKey),
         errorName: error?.name,
         errorMessage: error?.message,
         stack: error?.stack,

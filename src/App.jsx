@@ -116,6 +116,64 @@ const inferFileExtension = (value) => {
   }
 }
 
+const normalizeMessage = (value) => {
+  if (typeof value !== 'string') {
+    return ''
+  }
+
+  return value.trim().replace(/\s+/g, ' ').slice(0, 300)
+}
+
+const parseJsonSafely = (value) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null
+  }
+
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+const extractApiErrorMessage = ({ payload, rawText, status, statusText }) => {
+  const messageCandidates = [
+    payload?.error?.message,
+    typeof payload?.error?.details === 'string' ? payload.error.details : '',
+    payload?.message,
+    payload?.detail,
+    rawText,
+  ]
+  const message = messageCandidates.map(normalizeMessage).find(Boolean)
+
+  if (message && !message.startsWith('<')) {
+    return message
+  }
+
+  if (status === 413) {
+    return '上传文件过大，请压缩图片后重试。'
+  }
+
+  if (status >= 500) {
+    return `生成服务暂时不可用（${status}），请稍后重试。`
+  }
+
+  const statusLabel = [status, normalizeMessage(statusText)].filter(Boolean).join(' ')
+  return `生成请求失败（${statusLabel}），请检查填写内容后重试。`
+}
+
+const normalizeRequestErrorMessage = (error) => {
+  if (error?.name === 'AbortError') {
+    return '生成请求超时，请稍后重试。'
+  }
+
+  if (error instanceof TypeError) {
+    return '无法连接到生成服务，请检查网络连接后重试。'
+  }
+
+  return normalizeMessage(error?.message) || '生成失败，请稍后重试。'
+}
+
 function App() {
   const [posterType, setPosterType] = useState('training')
   const [sizeTemplate, setSizeTemplate] = useState('mobile')
@@ -258,11 +316,18 @@ function App() {
         method: 'POST',
         body: formData,
       })
-
-      const payload = await response.json().catch(() => null)
+      const rawText = await response.text()
+      const payload = parseJsonSafely(rawText)
 
       if (!response.ok) {
-        throw new Error(payload?.error?.message || '生成失败，请稍后重试')
+        throw new Error(
+          extractApiErrorMessage({
+            payload,
+            rawText,
+            status: response.status,
+            statusText: response.statusText,
+          }),
+        )
       }
 
       const nextImage = normalizeImageSrc(
@@ -279,7 +344,7 @@ function App() {
     } catch (err) {
       setGeneratedImage('')
       setPreviewReady(false)
-      showError(err.message || '生成失败，请检查网络连接')
+      showError(normalizeRequestErrorMessage(err), '生成失败')
     } finally {
       setLoading(false)
     }

@@ -26,7 +26,11 @@ const sanitizeText = (value, maxLength = 1000) =>
 const getRequestDebugId = (request) => String(request?.posterRequestId || "no-request-id");
 
 const logDebug = (message, details) => {
-  console.log(`${DEBUG_SCOPE} ${message}`, details);
+  console.error(`${DEBUG_SCOPE} ${message}`, details);
+};
+
+const logError = (message, details) => {
+  console.error(`${DEBUG_SCOPE} ${message}`, details);
 };
 
 export class ApiError extends Error {
@@ -135,9 +139,31 @@ export const validateGeneratePayload = (payload = {}) => {
   return normalized;
 };
 
+const getForwardedHeaderValue = (request, headerName) => {
+  const headerValue = request.get?.(headerName);
+
+  if (typeof headerValue !== "string") {
+    return "";
+  }
+
+  return headerValue
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+};
+
+const getPublicRequestProtocol = (request) =>
+  getForwardedHeaderValue(request, "x-forwarded-proto") || sanitizeText(request.protocol, 20) || "http";
+
+const getPublicRequestHost = (request) =>
+  getForwardedHeaderValue(request, "x-forwarded-host") || sanitizeText(request.get?.("host"), 255);
+
 const buildPublicFileUrl = (request, file) => {
   const encodedName = encodeURIComponent(file.filename);
-  return `${request.protocol}://${request.get("host")}/uploads/${encodedName}`;
+  const protocol = getPublicRequestProtocol(request);
+  const host = getPublicRequestHost(request);
+
+  return `${protocol}://${host}/uploads/${encodedName}`;
 };
 
 const pickFirstFile = (files, fieldName) => {
@@ -258,6 +284,10 @@ export const createApiRouter = ({
         requestId,
         body: request.body,
         fileFields: Object.keys(request.files || {}),
+        protocol: request.protocol,
+        forwardedProto: request.get?.("x-forwarded-proto"),
+        host: request.get?.("host"),
+        forwardedHost: request.get?.("x-forwarded-host"),
       });
       validateUploadedFile(logoFile, "logo");
       validateUploadedFile(referenceImageFile, "referenceImage");
@@ -275,10 +305,26 @@ export const createApiRouter = ({
       logDebug("prepared prompt and payload for generation:", {
         requestId,
         normalizedPayload,
+        publicAssetUrls: {
+          logoUrl,
+          referenceImageUrl,
+        },
         promptLength: promptResult.prompt.length,
         negativePromptLength: promptResult.negativePrompt.length,
         apiKey: describeEnvValue(normalizedApiKey),
       });
+
+      if ([logoUrl, referenceImageUrl].some((url) => /^http:\/\//i.test(url))) {
+        logError("generated public upload URL is using http; upstream image fetch may fail behind Railway proxy:", {
+          requestId,
+          logoUrl,
+          referenceImageUrl,
+          protocol: request.protocol,
+          forwardedProto: request.get?.("x-forwarded-proto"),
+          host: request.get?.("host"),
+          forwardedHost: request.get?.("x-forwarded-host"),
+        });
+      }
 
       logDebug("calling generatePosterImpl:", {
         requestId,
@@ -322,9 +368,34 @@ export const createApiRouter = ({
       });
     } catch (error) {
       await Promise.all([safeUnlink(logoFile), safeUnlink(referenceImageFile)]);
-      logDebug("generate route failed:", {
+      logError("generate route failed:", {
         requestId,
         apiKey: describeEnvValue(normalizedApiKey),
+        requestBody: request.body,
+        uploads: {
+          logoFile: logoFile
+            ? {
+                originalname: logoFile.originalname,
+                mimetype: logoFile.mimetype,
+                size: logoFile.size,
+                filename: logoFile.filename,
+                path: logoFile.path,
+              }
+            : null,
+          referenceImageFile: referenceImageFile
+            ? {
+                originalname: referenceImageFile.originalname,
+                mimetype: referenceImageFile.mimetype,
+                size: referenceImageFile.size,
+                filename: referenceImageFile.filename,
+                path: referenceImageFile.path,
+              }
+            : null,
+        },
+        protocol: request.protocol,
+        forwardedProto: request.get?.("x-forwarded-proto"),
+        host: request.get?.("host"),
+        forwardedHost: request.get?.("x-forwarded-host"),
         errorName: error?.name,
         errorMessage: error?.message,
         stack: error?.stack,

@@ -85,6 +85,8 @@ test("createDoubaoRequestBody includes negative prompt in the user message", () 
   assert.equal(body.model, "doubao-seedream-4-0-250828");
   assert.equal(body.response_format, "b64_json");
   assert.equal(body.size, "1024x1792");
+  assert.equal(body.sequential_image_generation, "disabled");
+  assert.equal(body.stream, false);
   assert.match(body.prompt, /不要低清晰度/);
 });
 
@@ -103,6 +105,15 @@ test("createDoubaoRequestBody includes normalized reference images", () => {
     "https://cdn.example.com/reference.png",
     "data:image/png;base64,abc123==",
   ]);
+});
+
+test("createDoubaoRequestBody sends a single reference image as a string", () => {
+  const body = createDoubaoRequestBody({
+    prompt: "生成品牌海报",
+    referenceImages: ["https://cdn.example.com/reference.png"],
+  });
+
+  assert.equal(body.image, "https://cdn.example.com/reference.png");
 });
 
 test("resolveImageSize keeps poster ratios within the supported range", () => {
@@ -195,7 +206,7 @@ test("generatePoster normalizes direct base64 image responses", async () => {
     },
   });
 
-  assert.deepEqual(requestBody.image, ["https://cdn.example.com/logo.png"]);
+  assert.equal(requestBody.image, "https://cdn.example.com/logo.png");
   assert.equal(result.imageUrl, `data:image/png;base64,${rawBase64}`);
 });
 
@@ -313,6 +324,103 @@ test("createApiRouter forwards the provided apiKey directly", async () => {
     assert.equal(response.statusCode, 200);
     assert.equal(receivedApiKey, "explicit-router-key");
     assert.equal(receivedRequestId, "req-test-123");
+  } finally {
+    rmSync(uploadDir, { recursive: true, force: true });
+  }
+});
+
+test("createApiRouter builds Railway-safe public upload urls from forwarded headers", async () => {
+  const uploadDir = mkdtempSync(join(tmpdir(), "ai-poster-generator-test-"));
+  const routes = new Map();
+  let receivedReferenceImages = [];
+
+  const Router = () => ({
+    post(path, ...handlers) {
+      routes.set(path, handlers);
+      return this;
+    },
+  });
+  const multerStub = Object.assign(
+    () => ({
+      fields: () => (_request, _response, next) => next(),
+    }),
+    {
+      diskStorage: () => ({}),
+    },
+  );
+
+  try {
+    createApiRouter({
+      Router,
+      multer: multerStub,
+      uploadDir,
+      apiKey: "explicit-router-key",
+      generatePosterImpl: async ({ referenceImages }) => {
+        receivedReferenceImages = referenceImages;
+        return {
+          imageUrl: "https://cdn.example.com/generated.png",
+          provider: "doubao-seed",
+          attempts: 1,
+        };
+      },
+    });
+
+    const [, handleGenerate] = routes.get("/generate");
+    const request = {
+      posterRequestId: "req-forwarded-headers",
+      is: () => false,
+      files: {
+        logo: [
+          {
+            fieldname: "logo",
+            originalname: "logo.png",
+            mimetype: "image/png",
+            size: 1024,
+            filename: "logo-generated.png",
+            path: join(uploadDir, "logo-generated.png"),
+          },
+        ],
+      },
+      body: {
+        title: "代理头测试",
+      },
+      protocol: "http",
+      get(headerName) {
+        if (headerName === "host") {
+          return "internal.railway";
+        }
+
+        if (headerName === "x-forwarded-host") {
+          return "poster.example.com";
+        }
+
+        if (headerName === "x-forwarded-proto") {
+          return "https";
+        }
+
+        return undefined;
+      },
+    };
+    const response = {
+      statusCode: 200,
+      payload: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.payload = payload;
+        return this;
+      },
+    };
+
+    let forwardedError;
+    await handleGenerate(request, response, (error) => {
+      forwardedError = error;
+    });
+
+    assert.equal(forwardedError, undefined);
+    assert.deepEqual(receivedReferenceImages, ["https://poster.example.com/uploads/logo-generated.png"]);
   } finally {
     rmSync(uploadDir, { recursive: true, force: true });
   }
