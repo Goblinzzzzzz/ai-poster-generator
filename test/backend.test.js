@@ -84,6 +84,23 @@ test("createDoubaoRequestBody includes negative prompt in the user message", () 
   assert.match(body.prompt, /不要低清晰度/);
 });
 
+test("createDoubaoRequestBody includes normalized reference images", () => {
+  const body = createDoubaoRequestBody({
+    prompt: "生成品牌海报",
+    referenceImages: [
+      "https://cdn.example.com/reference.png",
+      "data:image/png;base64,abc123==",
+      "https://cdn.example.com/reference.png",
+      "invalid-value",
+    ],
+  });
+
+  assert.deepEqual(body.image, [
+    "https://cdn.example.com/reference.png",
+    "data:image/png;base64,abc123==",
+  ]);
+});
+
 test("resolveImageSize keeps poster ratios within the supported range", () => {
   assert.equal(resolveImageSize("mobile"), "1024x1792");
   assert.equal(resolveImageSize("wechat_cover"), "1792x768");
@@ -136,4 +153,33 @@ test("generatePoster retries and extracts a data url from b64_json", async () =>
   assert.equal(attempts, 3);
   assert.equal(result.provider, "doubao-seed");
   assert.match(result.imageUrl, /^data:image\/png;base64,/);
+});
+
+test("generatePoster normalizes direct base64 image responses", async () => {
+  const rawBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9s4P4n8AAAAASUVORK5CYII=";
+  let requestBody;
+
+  const result = await generatePoster({
+    prompt: "生成品牌海报",
+    apiKey: "test-key",
+    referenceImages: ["https://cdn.example.com/logo.png"],
+    sleepImpl: async () => {},
+    fetchImpl: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+
+      return new Response(
+        JSON.stringify({
+          imageUrl: rawBase64,
+          mime_type: "image/png",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    },
+  });
+
+  assert.deepEqual(requestBody.image, ["https://cdn.example.com/logo.png"]);
+  assert.equal(result.imageUrl, `data:image/png;base64,${rawBase64}`);
 });

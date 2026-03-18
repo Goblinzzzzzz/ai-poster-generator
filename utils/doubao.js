@@ -3,6 +3,10 @@ const DEFAULT_MODEL = "doubao-seedream-4-0-250828";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_IMAGE_MIME_TYPE = "image/png";
+const MIN_BASE64_IMAGE_LENGTH = 64;
+const DATA_URL_PATTERN = /^data:image\/[a-zA-Z0-9.+-]+;base64,/i;
+const HTTP_URL_PATTERN = /^https?:\/\//i;
+const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
 const SIZE_TEMPLATES = {
   mobile: [1080, 1920],
@@ -82,24 +86,45 @@ const maybeParseJson = (value) => {
 const buildGenerationPrompt = ({ prompt, negativePrompt = "" }) =>
   negativePrompt ? `${prompt}\n\n负面约束：${negativePrompt}` : prompt;
 
+const normalizeInputImage = (value) => {
+  const normalized = String(value || "").trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (DATA_URL_PATTERN.test(normalized) || HTTP_URL_PATTERN.test(normalized)) {
+    return normalized;
+  }
+
+  return "";
+};
+
 export const createDoubaoRequestBody = ({
   prompt,
   negativePrompt = "",
   model = DEFAULT_MODEL,
   sizeTemplate = "mobile",
   responseFormat = "b64_json",
-}) => ({
-  model: normalizeModel(model),
-  prompt: buildGenerationPrompt({ prompt, negativePrompt }),
-  response_format: responseFormat,
-  size: resolveImageSize(sizeTemplate),
-  watermark: false,
-});
+  referenceImages = [],
+}) => {
+  const images = Array.from(new Set(referenceImages.map(normalizeInputImage).filter(Boolean))).slice(0, 4);
+
+  return {
+    model: normalizeModel(model),
+    prompt: buildGenerationPrompt({ prompt, negativePrompt }),
+    response_format: responseFormat,
+    size: resolveImageSize(sizeTemplate),
+    watermark: false,
+    ...(images.length > 0 ? { image: images } : {}),
+  };
+};
 
 const toDataUrl = (base64Value, mimeType = DEFAULT_IMAGE_MIME_TYPE) => {
   const normalizedValue = String(base64Value || "")
     .trim()
     .replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "")
+    .replace(/^base64,/, "")
     .replace(/\s+/g, "");
 
   if (!normalizedValue) {
@@ -107,6 +132,26 @@ const toDataUrl = (base64Value, mimeType = DEFAULT_IMAGE_MIME_TYPE) => {
   }
 
   return `data:${mimeType};base64,${normalizedValue}`;
+};
+
+const normalizeOutputImage = (value, mimeType = DEFAULT_IMAGE_MIME_TYPE) => {
+  const normalized = String(value || "").trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (DATA_URL_PATTERN.test(normalized) || HTTP_URL_PATTERN.test(normalized)) {
+    return normalized;
+  }
+
+  const compactValue = normalized.replace(/^base64,/, "").replace(/\s+/g, "");
+
+  if (compactValue.length >= MIN_BASE64_IMAGE_LENGTH && BASE64_IMAGE_PATTERN.test(compactValue)) {
+    return toDataUrl(compactValue, mimeType);
+  }
+
+  return normalized;
 };
 
 export const extractImageUrlFromResponse = (payload) => {
@@ -127,8 +172,10 @@ export const extractImageUrlFromResponse = (payload) => {
   ];
 
   for (const candidate of directCandidates) {
-    if (typeof candidate === "string" && candidate.trim()) {
-      return candidate.trim();
+    const normalizedCandidate = normalizeOutputImage(candidate, mimeType);
+
+    if (normalizedCandidate) {
+      return normalizedCandidate;
     }
   }
 
@@ -171,6 +218,7 @@ export const extractImageUrlFromResponse = (payload) => {
 export const generatePoster = async ({
   prompt,
   negativePrompt = "",
+  referenceImages = [],
   apiKey = process.env.DOUBAO_API_KEY,
   endpoint = process.env.DOUBAO_API_ENDPOINT || DEFAULT_ENDPOINT,
   model = process.env.DOUBAO_MODEL || DEFAULT_MODEL,
@@ -211,6 +259,7 @@ export const generatePoster = async ({
             negativePrompt,
             model,
             sizeTemplate,
+            referenceImages,
           }),
         ),
         signal: abortController.signal,

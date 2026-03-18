@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 
 const API_ENDPOINT = import.meta.env.VITE_POSTER_API_URL || '/api/generate'
 const ONE_MB = 1024 * 1024
+const MIN_BASE64_IMAGE_LENGTH = 64
+const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/
 
 const POSTER_TYPES = [
   { id: 'training', name: '培训海报', icon: '📚', desc: '专业培训、讲座、研讨会' },
@@ -88,7 +90,13 @@ const normalizeImageSrc = (value) => {
     return normalized
   }
 
-  return `data:image/png;base64,${normalized.replace(/^base64,/, '')}`
+  const compactValue = normalized.replace(/^base64,/, '').replace(/\s+/g, '')
+
+  if (compactValue.length >= MIN_BASE64_IMAGE_LENGTH && BASE64_IMAGE_PATTERN.test(compactValue)) {
+    return `data:image/png;base64,${compactValue}`
+  }
+
+  return ''
 }
 
 const inferFileExtension = (value) => {
@@ -227,6 +235,7 @@ function App() {
     }
 
     setLoading(true)
+    setGeneratedImage('')
     setPreviewReady(false)
     clearFeedback()
     setSuccessMessage(null)
@@ -265,6 +274,7 @@ function App() {
       }
 
       setGeneratedImage(nextImage)
+      setPreviewReady(false)
       setSuccessMessage('海报生成成功，可直接预览或下载。')
     } catch (err) {
       setGeneratedImage('')

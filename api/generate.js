@@ -164,6 +164,7 @@ export const createApiRouter = ({
   Router,
   multer,
   uploadDir,
+  apiKey = process.env.DOUBAO_API_KEY,
   generatePosterImpl = generatePoster,
 }) => {
   if (!Router || !multer) {
@@ -239,7 +240,7 @@ export const createApiRouter = ({
       });
       const promptResult = buildPrompt(normalizedPayload);
 
-      if (generatePosterImpl === generatePoster && !process.env.DOUBAO_API_KEY) {
+      if (!apiKey) {
         throw createApiError(
           503,
           "DOUBAO_NOT_CONFIGURED",
@@ -251,6 +252,8 @@ export const createApiRouter = ({
         prompt: promptResult.prompt,
         negativePrompt: promptResult.negativePrompt,
         sizeTemplate: normalizedPayload.sizeTemplate,
+        apiKey,
+        referenceImages: [referenceImageUrl, logoUrl].filter(Boolean),
       });
 
       response.status(200).json({
