@@ -14,12 +14,46 @@ const FILE_SIZE_LIMITS = {
   referenceImage: 10 * ONE_MB,
   file: 10 * ONE_MB,
 };
+const DEBUG_SCOPE = "[api/generate.js]";
 
 const sanitizeText = (value, maxLength = 1000) =>
   String(value || "")
     .trim()
     .replace(/\s+/g, " ")
     .slice(0, maxLength);
+
+const maskSecret = (value) => {
+  if (!value) {
+    return "(missing)";
+  }
+
+  const normalized = String(value).trim();
+
+  if (normalized.length <= 8) {
+    return `${normalized.slice(0, 2)}***`;
+  }
+
+  return `${normalized.slice(0, 4)}***${normalized.slice(-4)}`;
+};
+
+const describeApiKey = (value) => {
+  const rawValue = value === undefined ? undefined : String(value);
+  const normalizedValue = typeof rawValue === "string" ? rawValue.trim() : rawValue;
+
+  return {
+    rawValue,
+    normalizedValue,
+    hasValue: Boolean(normalizedValue),
+    length: typeof normalizedValue === "string" ? normalizedValue.length : 0,
+    preview: maskSecret(normalizedValue),
+  };
+};
+
+const getRequestDebugId = (request) => String(request?.posterRequestId || "no-request-id");
+
+const logDebug = (message, details) => {
+  console.log(`${DEBUG_SCOPE} ${message}`, details);
+};
 
 export class ApiError extends Error {
   constructor(statusCode, code, message, details) {
@@ -166,7 +200,8 @@ export const createApiRouter = ({
   Router,
   multer,
   uploadDir,
-  getApiKey = () => process.env.DOUBAO_API_KEY,
+  apiKey,
+  getApiKey,
   generatePosterImpl = generatePoster,
 }) => {
   if (!Router || !multer) {
@@ -174,6 +209,12 @@ export const createApiRouter = ({
   }
 
   ensureUploadDir(uploadDir);
+  logDebug("createApiRouter initialized:", {
+    uploadDir,
+    explicitApiKey: describeApiKey(apiKey),
+    envApiKeyAtInit: describeApiKey(process.env.DOUBAO_API_KEY),
+    hasGetApiKeyResolver: typeof getApiKey === "function",
+  });
 
   const storage = multer.diskStorage({
     destination: (_request, _file, callback) => {
@@ -216,6 +257,12 @@ export const createApiRouter = ({
   ]);
 
   const maybeHandleMultipart = (request, response, next) => {
+    logDebug("maybeHandleMultipart invoked:", {
+      requestId: getRequestDebugId(request),
+      contentType: request.get?.("content-type"),
+      isMultipart: request.is("multipart/form-data"),
+    });
+
     if (request.is("multipart/form-data")) {
       generateUpload(request, response, next);
       return;
@@ -224,11 +271,37 @@ export const createApiRouter = ({
     next();
   };
 
+  const resolveApiKeyForRequest = (request) => {
+    const requestId = getRequestDebugId(request);
+    const resolverValue =
+      typeof getApiKey === "function"
+        ? getApiKey(request)
+        : getApiKey;
+    const explicitApiKey = normalizeEnvValue(apiKey);
+    const resolvedApiKey = normalizeEnvValue(resolverValue) || explicitApiKey || normalizeEnvValue(process.env.DOUBAO_API_KEY);
+
+    logDebug("resolved API key for request:", {
+      requestId,
+      fromGetApiKey: describeApiKey(resolverValue),
+      fromExplicitApiKey: describeApiKey(apiKey),
+      fromProcessEnv: describeApiKey(process.env.DOUBAO_API_KEY),
+      resolvedApiKey: describeApiKey(resolvedApiKey),
+    });
+
+    return resolvedApiKey;
+  };
+
   router.post("/generate", maybeHandleMultipart, async (request, response, next) => {
     const logoFile = pickFirstFile(request.files, "logo");
     const referenceImageFile = pickFirstFile(request.files, "referenceImage");
+    const requestId = getRequestDebugId(request);
 
     try {
+      logDebug("handling /generate request:", {
+        requestId,
+        body: request.body,
+        fileFields: Object.keys(request.files || {}),
+      });
       validateUploadedFile(logoFile, "logo");
       validateUploadedFile(referenceImageFile, "referenceImage");
 
@@ -241,9 +314,21 @@ export const createApiRouter = ({
         referenceImageUrl,
       });
       const promptResult = buildPrompt(normalizedPayload);
-      const apiKey = normalizeEnvValue(typeof getApiKey === "function" ? getApiKey(request) : getApiKey);
+      const resolvedApiKey = resolveApiKeyForRequest(request);
 
-      if (!apiKey) {
+      logDebug("prepared prompt and payload for generation:", {
+        requestId,
+        normalizedPayload,
+        promptLength: promptResult.prompt.length,
+        negativePromptLength: promptResult.negativePrompt.length,
+        apiKey: describeApiKey(resolvedApiKey),
+      });
+
+      if (!resolvedApiKey) {
+        logDebug("missing API key before calling generatePoster:", {
+          requestId,
+          processEnvApiKey: describeApiKey(process.env.DOUBAO_API_KEY),
+        });
         throw createApiError(
           503,
           "DOUBAO_NOT_CONFIGURED",
@@ -251,12 +336,25 @@ export const createApiRouter = ({
         );
       }
 
+      logDebug("calling generatePosterImpl:", {
+        requestId,
+        apiKey: describeApiKey(resolvedApiKey),
+        referenceImages: [referenceImageUrl, logoUrl].filter(Boolean),
+      });
       const generationResult = await generatePosterImpl({
         prompt: promptResult.prompt,
         negativePrompt: promptResult.negativePrompt,
         sizeTemplate: normalizedPayload.sizeTemplate,
-        apiKey,
+        apiKey: resolvedApiKey,
         referenceImages: [referenceImageUrl, logoUrl].filter(Boolean),
+        requestId,
+      });
+
+      logDebug("generatePosterImpl succeeded:", {
+        requestId,
+        provider: generationResult.provider,
+        attempts: generationResult.attempts,
+        imageUrlPreview: String(generationResult.imageUrl || "").slice(0, 120),
       });
 
       response.status(200).json({
@@ -280,6 +378,13 @@ export const createApiRouter = ({
       });
     } catch (error) {
       await Promise.all([safeUnlink(logoFile), safeUnlink(referenceImageFile)]);
+      logDebug("generate route failed:", {
+        requestId,
+        apiKey: describeApiKey(process.env.DOUBAO_API_KEY),
+        errorName: error?.name,
+        errorMessage: error?.message,
+        stack: error?.stack,
+      });
 
       if (error instanceof ApiError) {
         next(error);

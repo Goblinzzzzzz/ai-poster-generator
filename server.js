@@ -16,6 +16,9 @@ const distDir = resolve(__dirname, "dist");
 const uploadDir = resolve(process.env.UPLOAD_DIR || join(tmpdir(), "ai-poster-generator-uploads"));
 const port = Number(process.env.PORT || 3000);
 const getDoubaoApiKey = () => String(process.env.DOUBAO_API_KEY || "").trim();
+const getRawDoubaoApiKey = () => process.env.DOUBAO_API_KEY;
+
+const createRequestDebugId = () => `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 const maskSecret = (value) => {
   if (!value) {
@@ -29,6 +32,19 @@ const maskSecret = (value) => {
   }
 
   return `${normalized.slice(0, 4)}***${normalized.slice(-4)}`;
+};
+
+const describeApiKey = (value) => {
+  const rawValue = value === undefined ? undefined : String(value);
+  const normalizedValue = typeof rawValue === "string" ? rawValue.trim() : rawValue;
+
+  return {
+    rawValue,
+    normalizedValue,
+    hasValue: Boolean(normalizedValue),
+    length: typeof normalizedValue === "string" ? normalizedValue.length : 0,
+    preview: maskSecret(normalizedValue),
+  };
 };
 
 const getDotenvStatus = () => {
@@ -53,6 +69,9 @@ const getStartupEnvDiagnostics = () => ({
   corsOrigin: process.env.CORS_ORIGIN || "(allow-all)",
 });
 
+const getSortedEnvironmentVariables = () =>
+  Object.fromEntries(Object.keys(process.env).sort().map((key) => [key, process.env[key]]));
+
 const normalizeCorsOrigin = () => {
   if (!process.env.CORS_ORIGIN) {
     return true;
@@ -65,6 +84,13 @@ const normalizeCorsOrigin = () => {
 
 export const createApp = () => {
   const app = express();
+  const routerApiKeyAtMount = getRawDoubaoApiKey();
+
+  console.log("[server.js] createApp router configuration:", {
+    uploadDir,
+    apiKey: describeApiKey(routerApiKeyAtMount),
+    hasGetApiKeyResolver: true,
+  });
 
   app.use(
     cors({
@@ -74,6 +100,22 @@ export const createApp = () => {
   );
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ extended: true, limit: "2mb" }));
+  app.use((request, response, next) => {
+    const requestId = String(request.get("x-request-id") || createRequestDebugId());
+    request.posterRequestId = requestId;
+    response.setHeader("x-request-id", requestId);
+
+    if (request.path.startsWith("/api")) {
+      console.log("[server.js] incoming API request:", {
+        requestId,
+        method: request.method,
+        path: request.originalUrl || request.url,
+        apiKey: describeApiKey(getRawDoubaoApiKey()),
+      });
+    }
+
+    next();
+  });
 
   app.get("/api/health", (_request, response) => {
     response.status(200).json({
@@ -87,7 +129,15 @@ export const createApp = () => {
   });
 
   app.use("/uploads", express.static(uploadDir, { fallthrough: false, maxAge: "24h" }));
-  app.use("/api", createApiRouter({ Router: express.Router, multer, uploadDir }));
+  app.use(
+    "/api",
+    createApiRouter({
+      Router: express.Router,
+      multer,
+      uploadDir,
+      getApiKey: getDoubaoApiKey,
+    }),
+  );
 
   app.use(express.static(distDir, { extensions: ["html"] }));
 
@@ -144,7 +194,8 @@ const app = createApp();
 const shouldStartServer = process.argv[1] && resolve(process.argv[1]) === __filename;
 
 if (shouldStartServer) {
-  console.log("DOUBAO_API_KEY:", getDoubaoApiKey() ? "SET" : "NOT SET");
+  console.log("[server.js] environment variables on startup:", getSortedEnvironmentVariables());
+  console.log("[server.js] startup DOUBAO_API_KEY diagnostics:", describeApiKey(getRawDoubaoApiKey()));
 
   cleanupStaleUploads(uploadDir).catch((error) => {
     console.error("Failed to cleanup stale uploads on startup:", error);
