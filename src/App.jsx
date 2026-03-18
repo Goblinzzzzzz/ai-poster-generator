@@ -1,6 +1,5 @@
 import { useState } from 'react'
 
-// 海报类型选项
 const POSTER_TYPES = [
   { id: 'training', name: '培训海报', icon: '📚', desc: '专业培训、讲座、研讨会' },
   { id: 'culture', name: '文化海报', icon: '🎭', desc: '企业文化、团队建设' },
@@ -9,7 +8,6 @@ const POSTER_TYPES = [
   { id: 'notice', name: '通知海报', icon: '📢', desc: '公告通知、重要提醒' },
 ]
 
-// 尺寸模板选项
 const SIZE_TEMPLATES = [
   { id: 'mobile', name: '手机海报', size: '1080×1920', desc: '微信朋友圈、微信群' },
   { id: 'a4', name: 'A4 打印', size: '2480×3508', desc: '打印张贴' },
@@ -18,7 +16,6 @@ const SIZE_TEMPLATES = [
   { id: 'weibo', name: '微博海报', size: '1000×1000', desc: '微博发布' },
 ]
 
-// 风格预设选项
 const STYLE_PRESETS = {
   training: ['专业严谨', '轻松活泼', '简约现代'],
   culture: ['温暖人文', '活力激情', '简约大气'],
@@ -27,7 +24,6 @@ const STYLE_PRESETS = {
   notice: ['清晰醒目', '正式严肃', '简约直接'],
 }
 
-// Prompt 模板
 const PROMPT_TEMPLATES = [
   '简约商务风格，留白多一些，蓝色主色调',
   '节日喜庆风格，红色为主，热闹氛围',
@@ -36,8 +32,22 @@ const PROMPT_TEMPLATES = [
   '文字居中，大标题，清晰醒目',
 ]
 
+const WORKFLOW_STEPS = [
+  {
+    title: '配置创意参数',
+    desc: '选择海报类型、版式尺寸和品牌视觉方向，快速搭建基础创意框架。',
+  },
+  {
+    title: '上传品牌素材',
+    desc: '添加 Logo 与参考图，帮助模型理解品牌调性并控制最终画面细节。',
+  },
+  {
+    title: '生成并交付',
+    desc: '数秒内得到高质量海报预览，确认无误后直接下载成品投入使用。',
+  },
+]
+
 function App() {
-  // 表单状态
   const [posterType, setPosterType] = useState('training')
   const [sizeTemplate, setSizeTemplate] = useState('mobile')
   const [title, setTitle] = useState('')
@@ -49,22 +59,27 @@ function App() {
   const [customPrompt, setCustomPrompt] = useState('')
   const [negativePrompt, setNegativePrompt] = useState('')
   const [logoPosition, setLogoPosition] = useState('auto')
-  
-  // 生成状态
+
   const [loading, setLoading] = useState(false)
   const [generatedImage, setGeneratedImage] = useState(null)
   const [error, setError] = useState(null)
+  const [successMessage, setSuccessMessage] = useState(null)
 
-  // 处理生成
+  const selectedPosterType = POSTER_TYPES.find((type) => type.id === posterType)
+  const selectedSizeTemplate = SIZE_TEMPLATES.find((size) => size.id === sizeTemplate)
+  const titleError = error === '请输入海报标题'
+
   const handleGenerate = async () => {
-    if (!title) {
+    if (!title.trim()) {
       setError('请输入海报标题')
+      setSuccessMessage(null)
       return
     }
-    
+
     setLoading(true)
     setError(null)
-    
+    setSuccessMessage(null)
+
     try {
       const formData = new FormData()
       formData.append('posterType', posterType)
@@ -75,29 +90,32 @@ function App() {
       formData.append('customPrompt', customPrompt)
       formData.append('negativePrompt', negativePrompt)
       formData.append('logoPosition', logoPosition)
+
       if (logo) formData.append('logo', logo)
       if (referenceImage) formData.append('referenceImage', referenceImage)
-      
+
       const response = await fetch('/api/generate', {
         method: 'POST',
         body: formData,
       })
-      
+
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => null)
         throw new Error(errorPayload?.error?.message || '生成失败，请稍后重试')
       }
-      
+
       const data = await response.json()
-      setGeneratedImage(data.imageUrl || data.data?.imageUrl || null)
+      const imageUrl = data.imageUrl || data.data?.imageUrl || null
+      setGeneratedImage(imageUrl)
+      setSuccessMessage(imageUrl ? '海报生成成功，可直接预览或下载。' : '任务已完成。')
     } catch (err) {
       setError(err.message || '生成失败，请检查网络连接')
+      setSuccessMessage(null)
     } finally {
       setLoading(false)
     }
   }
 
-  // 处理下载
   const handleDownload = () => {
     if (generatedImage) {
       const link = document.createElement('a')
@@ -105,255 +123,302 @@ function App() {
       const extension = generatedImage.startsWith('data:image/svg+xml') ? 'svg' : 'png'
       link.download = `海报-${Date.now()}.${extension}`
       link.click()
+      setSuccessMessage('下载已开始，请查看浏览器下载列表。')
     }
   }
 
-  // 处理 Logo 上传
   const handleLogoUpload = (e) => {
     const file = e.target.files[0]
+
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
         setError('Logo 文件大小不能超过 5MB')
+        setSuccessMessage(null)
         return
       }
+
       setLogo(file)
+      setError(null)
     }
   }
 
-  // 处理参考图上传
   const handleReferenceUpload = (e) => {
     const file = e.target.files[0]
+
     if (file) {
       if (file.size > 10 * 1024 * 1024) {
         setError('参考图文件大小不能超过 10MB')
+        setSuccessMessage(null)
         return
       }
+
       setReferenceImage(file)
+      setError(null)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      {/* 头部 */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-                AP
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">AI 海报生成器</h1>
-                <p className="text-sm text-gray-500">一键生成专业海报</p>
-              </div>
-            </div>
-            <nav className="flex gap-4 text-sm">
-              <a href="#studio" className="text-gray-600 hover:text-blue-600">创作</a>
-              <a href="#workflow" className="text-gray-600 hover:text-blue-600">流程</a>
-              <a href="#footer" className="text-gray-600 hover:text-blue-600">关于</a>
-            </nav>
-          </div>
+    <div className="app-shell">
+      <div className="app-bg-orb app-bg-orb-left" />
+      <div className="app-bg-orb app-bg-orb-right" />
+
+      <header className="topbar">
+        <div className="shell-container topbar-inner">
+          <a href="#studio" className="brand-lockup" aria-label="AI 海报生成器">
+            <span className="brand-mark">AP</span>
+            <span>
+              <strong>AI 海报生成器</strong>
+              <small>Professional poster studio</small>
+            </span>
+          </a>
+
+          <nav className="topnav">
+            <a href="#studio" className="nav-chip">创作中心</a>
+            <a href="#workflow" className="nav-chip">使用流程</a>
+            <a href="#footer" className="nav-chip">关于产品</a>
+          </nav>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid lg:grid-cols-2 gap-8">
-          {/* 左侧：表单区域 */}
-          <div className="space-y-6">
-            {/* 海报类型选择 */}
-            <section className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <span className="text-2xl">📋</span>
-                海报类型
-              </h2>
-              <div className="grid grid-cols-2 gap-3">
+      <main className="shell-container app-main">
+        <section className="hero-card">
+          <div className="hero-copy">
+            <span className="hero-badge">AI DESIGN STUDIO</span>
+            <h1>将品牌海报生产流程压缩到一次提交。</h1>
+            <p>
+              以 SaaS 工作台方式组织你的文案、尺寸、素材和 Prompt 配置。
+              保持流程清晰，同时让最终画面更专业、更稳定。
+            </p>
+
+            <div className="hero-metrics">
+              <div className="metric-tile">
+                <strong>5+</strong>
+                <span>预置海报场景</span>
+              </div>
+              <div className="metric-tile">
+                <strong>10-30s</strong>
+                <span>平均生成时长</span>
+              </div>
+              <div className="metric-tile">
+                <strong>Ready</strong>
+                <span>支持直接下载交付</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="hero-side-panel">
+            <div className="hero-side-label">当前配置</div>
+            <div className="hero-side-value">{selectedPosterType?.name}</div>
+            <div className="hero-side-meta">
+              <span>{selectedSizeTemplate?.size}</span>
+              <span>{styleDesc || '待设置风格'}</span>
+            </div>
+            <div className="hero-side-note">
+              使用左侧工作台完成配置，右侧实时查看生成结果与交付状态。
+            </div>
+          </div>
+        </section>
+
+        <section id="studio" className="studio-grid">
+          <div className="studio-column">
+            <section className="surface-card">
+              <div className="section-heading">
+                <div>
+                  <span className="section-kicker">01</span>
+                  <h2>选择海报方向</h2>
+                </div>
+                <p>先定义内容场景与输出尺寸，后续生成结果会更稳定。</p>
+              </div>
+
+              <div className="type-grid">
                 {POSTER_TYPES.map((type) => (
                   <button
                     key={type.id}
+                    type="button"
                     onClick={() => setPosterType(type.id)}
-                    className={`p-4 rounded-lg border-2 transition-all ${
-                      posterType === type.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                    className={`select-card ${posterType === type.id ? 'select-card-active' : ''}`}
                   >
-                    <div className="text-3xl mb-2">{type.icon}</div>
-                    <div className="font-medium">{type.name}</div>
-                    <div className="text-xs text-gray-500 mt-1">{type.desc}</div>
+                    <span className="select-card-icon">{type.icon}</span>
+                    <strong>{type.name}</strong>
+                    <small>{type.desc}</small>
                   </button>
                 ))}
               </div>
-            </section>
 
-            {/* 尺寸选择 */}
-            <section className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <span className="text-2xl">📐</span>
-                尺寸模板
-              </h2>
-              <div className="space-y-2">
+              <div className="size-list">
                 {SIZE_TEMPLATES.map((size) => (
                   <button
                     key={size.id}
+                    type="button"
                     onClick={() => setSizeTemplate(size.id)}
-                    className={`w-full p-3 rounded-lg border-2 transition-all flex items-center justify-between ${
-                      sizeTemplate === size.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                    className={`size-card ${sizeTemplate === size.id ? 'size-card-active' : ''}`}
                   >
-                    <div className="text-left">
-                      <div className="font-medium">{size.name}</div>
-                      <div className="text-xs text-gray-500">{size.desc}</div>
-                    </div>
-                    <div className="text-sm text-gray-600 font-mono">{size.size}</div>
+                    <span>
+                      <strong>{size.name}</strong>
+                      <small>{size.desc}</small>
+                    </span>
+                    <em>{size.size}</em>
                   </button>
                 ))}
               </div>
             </section>
 
-            {/* 文案输入 */}
-            <section className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <span className="text-2xl">✏️</span>
-                文案内容
-              </h2>
-              <div className="space-y-4">
+            <section className="surface-card">
+              <div className="section-heading">
                 <div>
-                  <label className="block text-sm font-medium mb-2">标题 <span className="text-red-500">*</span></label>
+                  <span className="section-kicker">02</span>
+                  <h2>编辑文案与风格</h2>
+                </div>
+                <p>通过标题、正文和风格标签组合出更清晰的视觉意图。</p>
+              </div>
+
+              <div className="field-stack">
+                <label className="field-group">
+                  <span className="field-label">
+                    标题
+                    <b>*</b>
+                  </span>
                   <input
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="输入海报标题（最多 50 字）"
                     maxLength={50}
-                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`field-input ${titleError ? 'field-input-error' : ''}`}
                   />
-                  <div className="text-xs text-gray-500 mt-1">{title.length}/50</div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">副标题/正文</label>
+                  <span className="field-meta">{title.length}/50</span>
+                </label>
+
+                <label className="field-group">
+                  <span className="field-label">副标题/正文</span>
                   <textarea
                     value={subtitle}
                     onChange={(e) => setSubtitle(e.target.value)}
                     placeholder="输入副标题或正文内容（最多 200 字）"
                     maxLength={200}
-                    rows={3}
-                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={4}
+                    className="field-input field-textarea"
                   />
-                  <div className="text-xs text-gray-500 mt-1">{subtitle.length}/200</div>
+                  <span className="field-meta">{subtitle.length}/200</span>
+                </label>
+
+                <div className="field-group">
+                  <span className="field-label">风格预设</span>
+                  <div className="chip-row">
+                    {STYLE_PRESETS[posterType]?.map((style) => (
+                      <button
+                        key={style}
+                        type="button"
+                        onClick={() => setStyleDesc(style)}
+                        className={`choice-chip ${styleDesc === style ? 'choice-chip-active' : ''}`}
+                      >
+                        {style}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                <label className="field-group">
+                  <span className="field-label">自定义风格描述</span>
+                  <input
+                    type="text"
+                    value={styleDesc}
+                    onChange={(e) => setStyleDesc(e.target.value)}
+                    placeholder="如：简约商务风，蓝色主色调"
+                    className="field-input"
+                  />
+                </label>
               </div>
             </section>
 
-            {/* 风格描述 */}
-            <section className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <span className="text-2xl">🎨</span>
-                风格描述
-              </h2>
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {STYLE_PRESETS[posterType]?.map((style) => (
-                    <button
-                      key={style}
-                      onClick={() => setStyleDesc(style)}
-                      className={`px-4 py-2 rounded-full text-sm transition-all ${
-                        styleDesc === style
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {style}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={styleDesc}
-                  onChange={(e) => setStyleDesc(e.target.value)}
-                  placeholder="或自定义风格描述（如：简约商务风，蓝色主色调）"
-                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </section>
-
-            {/* 图片上传 */}
-            <section className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <span className="text-2xl">🖼️</span>
-                图片上传
-              </h2>
-              <div className="space-y-4">
+            <section className="surface-card">
+              <div className="section-heading">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Logo <span className="text-red-500">*</span></label>
+                  <span className="section-kicker">03</span>
+                  <h2>上传品牌素材</h2>
+                </div>
+                <p>上传素材可帮助模型更好地对齐品牌识别与视觉质感。</p>
+              </div>
+
+              <div className="upload-grid">
+                <label className={`upload-card ${logo ? 'upload-card-complete' : ''}`}>
                   <input
                     type="file"
                     accept="image/*"
                     onChange={handleLogoUpload}
-                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="sr-only"
                   />
-                  {logo && (
-                    <div className="mt-2 text-sm text-green-600">✓ 已选择：{logo.name}</div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">参考图（可选）</label>
+                  <span className="upload-badge">{logo ? '已上传' : '必填'}</span>
+                  <strong>Logo 文件</strong>
+                  <small>支持 PNG / JPG，大小不超过 5MB</small>
+                  <span className="upload-file">{logo ? logo.name : '点击选择品牌 Logo'}</span>
+                </label>
+
+                <label className={`upload-card ${referenceImage ? 'upload-card-complete' : ''}`}>
                   <input
                     type="file"
                     accept="image/*"
                     onChange={handleReferenceUpload}
-                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="sr-only"
                   />
-                  {referenceImage && (
-                    <div className="mt-2 text-sm text-green-600">✓ 已选择：{referenceImage.name}</div>
-                  )}
-                </div>
+                  <span className="upload-badge upload-badge-optional">可选</span>
+                  <strong>参考图</strong>
+                  <small>支持 PNG / JPG，大小不超过 10MB</small>
+                  <span className="upload-file">
+                    {referenceImage ? referenceImage.name : '上传参考图辅助控制风格'}
+                  </span>
+                </label>
               </div>
             </section>
 
-            {/* 高级模式 */}
-            <section className="bg-white rounded-xl shadow-sm border p-6">
+            <section className="surface-card">
               <button
+                type="button"
                 onClick={() => setAdvancedMode(!advancedMode)}
-                className="w-full flex items-center justify-between text-left"
+                className="advanced-toggle"
               >
-                <h2 className="text-lg font-semibold flex items-center gap-2">
-                  <span className="text-2xl">⚙️</span>
-                  高级模式
-                </h2>
-                <span className={`transform transition-transform ${advancedMode ? 'rotate-180' : ''}`}>▼</span>
+                <span>
+                  <span className="section-kicker">04</span>
+                  <strong>高级配置</strong>
+                  <small>控制 Prompt、负面词与 Logo 摆放策略</small>
+                </span>
+                <span className={`advanced-arrow ${advancedMode ? 'advanced-arrow-open' : ''}`}>
+                  ▾
+                </span>
               </button>
-              
+
               {advancedMode && (
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">自定义 Prompt</label>
+                <div className="advanced-panel">
+                  <label className="field-group">
+                    <span className="field-label">自定义 Prompt</span>
                     <textarea
                       value={customPrompt}
                       onChange={(e) => setCustomPrompt(e.target.value)}
                       placeholder="自定义 Prompt 将覆盖系统自动生成（最多 1000 字）"
                       maxLength={1000}
-                      rows={3}
-                      className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={4}
+                      className="field-input field-textarea"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">负面 Prompt</label>
+                    <span className="field-meta">{customPrompt.length}/1000</span>
+                  </label>
+
+                  <label className="field-group">
+                    <span className="field-label">负面 Prompt</span>
                     <input
                       type="text"
                       value={negativePrompt}
                       onChange={(e) => setNegativePrompt(e.target.value)}
-                      placeholder="不希望出现的元素（如：不要文字、不要人物）"
-                      className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="如：不要文字、不要人物、不要低清晰度"
+                      className="field-input"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Logo 位置</label>
+                  </label>
+
+                  <label className="field-group">
+                    <span className="field-label">Logo 位置</span>
                     <select
                       value={logoPosition}
                       onChange={(e) => setLogoPosition(e.target.value)}
-                      className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="field-input field-select"
                     >
                       <option value="auto">自动（推荐）</option>
                       <option value="top_left">左上角</option>
@@ -361,17 +426,19 @@ function App() {
                       <option value="bottom_left">左下角</option>
                       <option value="bottom_right">右下角</option>
                     </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Prompt 模板</label>
-                    <div className="flex flex-wrap gap-2">
-                      {PROMPT_TEMPLATES.map((template, i) => (
+                  </label>
+
+                  <div className="field-group">
+                    <span className="field-label">快速模板</span>
+                    <div className="chip-row">
+                      {PROMPT_TEMPLATES.map((template, index) => (
                         <button
-                          key={i}
+                          key={template}
+                          type="button"
                           onClick={() => setCustomPrompt(template)}
-                          className="px-3 py-1 text-sm bg-gray-100 rounded-full hover:bg-gray-200"
+                          className="template-chip"
                         >
-                          模板{i + 1}
+                          模板 {index + 1}
                         </button>
                       ))}
                     </div>
@@ -380,108 +447,158 @@ function App() {
               )}
             </section>
 
-            {/* 生成按钮 */}
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="w-full py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  生成中...
-                </span>
-              ) : (
-                '🚀 立即生成海报'
-              )}
-            </button>
-
-            {/* 错误提示 */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                ❌ {error}
+            <section className="action-card">
+              <div className="action-copy">
+                <h3>准备生成</h3>
+                <p>系统会根据你当前的配置创建海报成品，并在右侧返回预览图。</p>
               </div>
-            )}
+
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={loading}
+                className={`primary-cta ${loading ? 'primary-cta-loading' : ''}`}
+              >
+                {loading ? (
+                  <>
+                    <span className="inline-spinner" />
+                    生成中...
+                  </>
+                ) : (
+                  '立即生成海报'
+                )}
+              </button>
+
+              {error && (
+                <div className="alert-banner alert-error">
+                  <strong>生成异常</strong>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {successMessage && !error && (
+                <div className="alert-banner alert-success">
+                  <strong>操作成功</strong>
+                  <span>{successMessage}</span>
+                </div>
+              )}
+            </section>
           </div>
 
-          {/* 右侧：预览区域 */}
-          <div className="lg:sticky lg:top-8">
-            <section className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <span className="text-2xl">👁️</span>
-                预览
-              </h2>
-              
-              <div className="aspect-[9/16] bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
-                {generatedImage ? (
-                  <img src={generatedImage} alt="生成的海报" className="w-full h-full object-cover" />
+          <aside className="preview-column">
+            <section className="preview-card">
+              <div className="preview-header">
+                <div>
+                  <span className="section-kicker">LIVE PREVIEW</span>
+                  <h2>生成结果预览</h2>
+                </div>
+                <span className={`status-pill ${loading ? 'status-pill-busy' : ''}`}>
+                  {loading ? 'Rendering' : generatedImage ? 'Completed' : 'Waiting'}
+                </span>
+              </div>
+
+              <div className="preview-stage">
+                {loading ? (
+                  <div className="preview-loading">
+                    <div className="preview-glow" />
+                    <div className="preview-skeleton preview-skeleton-title" />
+                    <div className="preview-skeleton preview-skeleton-line" />
+                    <div className="preview-skeleton preview-skeleton-line short" />
+                    <div className="preview-skeleton preview-skeleton-footer" />
+                  </div>
+                ) : generatedImage ? (
+                  <img src={generatedImage} alt="生成的海报" className="preview-image" />
                 ) : (
-                  <div className="text-center text-gray-400">
-                    <div className="text-6xl mb-4">🎨</div>
-                    <div className="text-lg">填写表单后点击生成</div>
-                    <div className="text-sm mt-2">预计耗时 10-30 秒</div>
+                  <div className="preview-placeholder">
+                    <span className="preview-placeholder-icon">✦</span>
+                    <strong>海报预览将在这里出现</strong>
+                    <p>填写左侧表单并开始生成，系统通常会在 10-30 秒内返回结果。</p>
                   </div>
                 )}
               </div>
 
+              <div className="preview-summary">
+                <div className="summary-row">
+                  <span>海报类型</span>
+                  <strong>{selectedPosterType?.name}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>尺寸规格</span>
+                  <strong>{selectedSizeTemplate?.size}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>风格描述</span>
+                  <strong>{styleDesc || '未设置'}</strong>
+                </div>
+              </div>
+
               {generatedImage && (
-                <button
-                  onClick={handleDownload}
-                  className="w-full mt-4 py-3 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-all"
-                >
-                  📥 下载海报
+                <button type="button" onClick={handleDownload} className="secondary-cta">
+                  下载海报
                 </button>
               )}
+            </section>
 
-              {/* 信息卡片 */}
-              <div className="mt-6 space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">海报类型</span>
-                  <span className="font-medium">{POSTER_TYPES.find(t => t.id === posterType)?.name}</span>
+            <section className="surface-card">
+              <div className="section-heading">
+                <div>
+                  <span className="section-kicker">OUTPUT CHECK</span>
+                  <h2>交付建议</h2>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">尺寸</span>
-                  <span className="font-medium">{SIZE_TEMPLATES.find(s => s.id === sizeTemplate)?.size}</span>
+                <p>生成完成后，建议优先检查以下关键项，避免返工。</p>
+              </div>
+
+              <div className="checklist">
+                <div className="checklist-item">
+                  <strong>文案层级</strong>
+                  <span>确认标题是否足够醒目，正文是否有足够留白与可读性。</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">风格</span>
-                  <span className="font-medium">{styleDesc || '未设置'}</span>
+                <div className="checklist-item">
+                  <strong>品牌一致性</strong>
+                  <span>检查 Logo 位置、品牌色和彩页调性是否与实际品牌规范匹配。</span>
+                </div>
+                <div className="checklist-item">
+                  <strong>投放适配</strong>
+                  <span>根据输出尺寸确认内容裁切范围，避免在移动端或打印场景中被遮挡。</span>
                 </div>
               </div>
             </section>
-          </div>
-        </div>
+          </aside>
+        </section>
+
+        <section id="workflow" className="workflow-grid">
+          {WORKFLOW_STEPS.map((step, index) => (
+            <article key={step.title} className="workflow-card">
+              <span className="workflow-index">0{index + 1}</span>
+              <h3>{step.title}</h3>
+              <p>{step.desc}</p>
+            </article>
+          ))}
+        </section>
       </main>
 
-      {/* 页脚 */}
-      <footer id="footer" className="bg-white border-t mt-12">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="grid md:grid-cols-3 gap-8">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded text-white font-bold flex items-center justify-center">AP</div>
-                <span className="font-semibold">AI 海报生成器</span>
-              </div>
-              <p className="text-sm text-gray-500">用 AI 替代供应商，实现企业海报设计降本增效</p>
+      <footer id="footer" className="footer-wrap">
+        <div className="shell-container footer-card">
+          <div>
+            <div className="brand-lockup footer-brand">
+              <span className="brand-mark">AP</span>
+              <span>
+                <strong>AI 海报生成器</strong>
+                <small>为企业内部设计流程提供高效 AI 工作台</small>
+              </span>
             </div>
-            <div>
-              <h3 className="font-semibold mb-2">快速链接</h3>
-              <ul className="space-y-1 text-sm text-gray-500">
-                <li><a href="#studio" className="hover:text-blue-600">创作工作室</a></li>
-                <li><a href="#workflow" className="hover:text-blue-600">使用流程</a></li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2">技术支持</h3>
-              <p className="text-sm text-gray-500">如有问题请联系管理员</p>
-            </div>
+            <p className="footer-copy">
+              用统一的创作界面管理素材、文案与生成结果，让海报生产流程更可控。
+            </p>
           </div>
-          <div className="border-t mt-6 pt-6 text-center text-sm text-gray-400">
-            © 2026 AI 海报生成器 | Powered by Doubao-Seed
+
+          <div className="footer-links">
+            <a href="#studio">创作中心</a>
+            <a href="#workflow">使用流程</a>
+            <a href="#footer">技术支持</a>
           </div>
+
+          <div className="footer-meta">© 2026 AI 海报生成器 | Powered by Doubao-Seed</div>
         </div>
       </footer>
     </div>
