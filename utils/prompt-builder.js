@@ -46,6 +46,8 @@ export const buildPrompt = (rawInput = {}) => {
   const posterTypeLabel = POSTER_TYPE_LABELS[input.posterType] || input.posterType || "海报";
   const sizeLabel = SIZE_LABELS[input.sizeTemplate] || input.sizeTemplate || "自定义尺寸";
   const logoPositionLabel = LOGO_POSITION_LABELS[input.logoPosition] || "自动推荐位置";
+  const hasLogoAsset = Boolean(input.logoUrl);
+  const hasReferenceAsset = Boolean(input.referenceImageUrl);
   const outputRequirements = [
     "高质量、专业设计",
     `符合${posterTypeLabel}特点`,
@@ -58,9 +60,9 @@ export const buildPrompt = (rawInput = {}) => {
     `- 标题：${input.title || "未提供"}`,
     `- 副标题：${input.subtitle || "未提供"}`,
     `- 风格：${input.styleDesc}`,
-    `- Logo：${input.logoUrl ? `使用该素材 ${input.logoUrl}` : "无 Logo 素材"}`,
+    `- Logo：${hasLogoAsset ? "已上传品牌 Logo 素材，请保留品牌识别感" : "无 Logo 素材"}`,
     `- Logo 位置：${logoPositionLabel}`,
-    `- 参考图：${input.referenceImageUrl ? input.referenceImageUrl : "无参考图"}`,
+    `- 参考图：${hasReferenceAsset ? "已上传参考图，请参考其整体配色、构图或质感" : "无参考图"}`,
   ];
 
   if (input.customPrompt) {
@@ -96,8 +98,8 @@ export const buildPrompt = (rawInput = {}) => {
     `- 标题：${input.title || "未提供"}`,
     `- 副标题：${input.subtitle || "未提供"}`,
     `- 风格：${input.styleDesc}`,
-    `- 包含 Logo：${input.logoUrl ? `${input.logoUrl}，位置 ${logoPositionLabel}` : "无"}`,
-    `- 参考风格：${input.referenceImageUrl || "无"}`,
+    `- 包含 Logo：${hasLogoAsset ? `是，位置 ${logoPositionLabel}` : "无"}`,
+    `- 参考风格：${hasReferenceAsset ? "已上传参考图，请参考其视觉风格" : "无"}`,
     `- 负面要求：${input.negativePrompt || "无"}`,
     "",
     "输出要求：",

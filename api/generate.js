@@ -238,14 +238,19 @@ export const createApiRouter = ({
         referenceImageUrl,
       });
       const promptResult = buildPrompt(normalizedPayload);
+
+      if (generatePosterImpl === generatePoster && !process.env.DOUBAO_API_KEY) {
+        throw createApiError(
+          503,
+          "DOUBAO_NOT_CONFIGURED",
+          "Doubao 图片生成服务未配置，请先设置 DOUBAO_API_KEY。",
+        );
+      }
+
       const generationResult = await generatePosterImpl({
         prompt: promptResult.prompt,
         negativePrompt: promptResult.negativePrompt,
-        fallbackInput: {
-          ...normalizedPayload,
-          logoUrl,
-          referenceImageUrl,
-        },
+        sizeTemplate: normalizedPayload.sizeTemplate,
       });
 
       response.status(200).json({
@@ -268,11 +273,25 @@ export const createApiRouter = ({
         },
       });
     } catch (error) {
+      await Promise.all([safeUnlink(logoFile), safeUnlink(referenceImageFile)]);
+
       if (error instanceof ApiError) {
-        await Promise.all([safeUnlink(logoFile), safeUnlink(referenceImageFile)]);
+        next(error);
+        return;
       }
 
-      next(error);
+      const message =
+        typeof error?.message === "string" && error.message.trim()
+          ? error.message.trim()
+          : "Doubao 图片生成失败，请稍后重试。";
+
+      next(
+        createApiError(
+          /未配置/.test(message) ? 503 : 502,
+          /未配置/.test(message) ? "DOUBAO_NOT_CONFIGURED" : "DOUBAO_GENERATION_FAILED",
+          message,
+        ),
+      );
     }
   });
 
