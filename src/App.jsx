@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
-// Railway 生产环境使用相对路径，本地开发可使用环境变量覆盖
-const API_ENDPOINT = '/api/generate'
+// API 端点配置：优先使用环境变量，回退到相对路径（Railway 生产环境）
+const API_ENDPOINT = import.meta.env.VITE_POSTER_API_URL || '/api/generate'
 const ONE_MB = 1024 * 1024
 const MIN_BASE64_IMAGE_LENGTH = 64
 const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/

@@ -90,6 +90,18 @@ export const createApp = () => {
     apiKey: describeEnvValue(routerApiKeyAtMount),
   });
 
+  // Rate limiting: 限制每个 IP 的请求频率，防止滥用
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 分钟窗口
+    max: 100, // 每个 IP 最多 100 次请求
+    message: { success: false, error: '请求过于频繁，请稍后再试。' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // 对 API 端点应用限流
+  app.use('/api', limiter);
+
   app.use(
     cors({
       origin: normalizeCorsOrigin(),
