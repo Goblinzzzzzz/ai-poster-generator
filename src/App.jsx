@@ -73,6 +73,8 @@ function App() {
       formData.append('subtitle', subtitle)
       formData.append('styleDesc', styleDesc)
       formData.append('customPrompt', customPrompt)
+      formData.append('negativePrompt', negativePrompt)
+      formData.append('logoPosition', logoPosition)
       if (logo) formData.append('logo', logo)
       if (referenceImage) formData.append('referenceImage', referenceImage)
       
@@ -82,11 +84,12 @@ function App() {
       })
       
       if (!response.ok) {
-        throw new Error('生成失败，请稍后重试')
+        const errorPayload = await response.json().catch(() => null)
+        throw new Error(errorPayload?.error?.message || '生成失败，请稍后重试')
       }
       
       const data = await response.json()
-      setGeneratedImage(data.imageUrl)
+      setGeneratedImage(data.imageUrl || data.data?.imageUrl || null)
     } catch (err) {
       setError(err.message || '生成失败，请检查网络连接')
     } finally {
@@ -99,7 +102,8 @@ function App() {
     if (generatedImage) {
       const link = document.createElement('a')
       link.href = generatedImage
-      link.download = `海报-${Date.now()}.png`
+      const extension = generatedImage.startsWith('data:image/svg+xml') ? 'svg' : 'png'
+      link.download = `海报-${Date.now()}.${extension}`
       link.click()
     }
   }
