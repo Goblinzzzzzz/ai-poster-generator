@@ -7,6 +7,7 @@ const MIN_BASE64_IMAGE_LENGTH = 64;
 const DATA_URL_PATTERN = /^data:image\/[a-zA-Z0-9.+-]+;base64,/i;
 const HTTP_URL_PATTERN = /^https?:\/\//i;
 const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+const normalizeEnvValue = (value) => (typeof value === "string" ? value.trim() : value);
 
 const SIZE_TEMPLATES = {
   mobile: [1080, 1920],
@@ -219,15 +220,17 @@ export const generatePoster = async ({
   prompt,
   negativePrompt = "",
   referenceImages = [],
-  apiKey = process.env.DOUBAO_API_KEY,
-  endpoint = process.env.DOUBAO_API_ENDPOINT || DEFAULT_ENDPOINT,
-  model = process.env.DOUBAO_MODEL || DEFAULT_MODEL,
+  apiKey = normalizeEnvValue(process.env.DOUBAO_API_KEY),
+  endpoint = normalizeEnvValue(process.env.DOUBAO_API_ENDPOINT) || DEFAULT_ENDPOINT,
+  model = normalizeEnvValue(process.env.DOUBAO_MODEL) || DEFAULT_MODEL,
   sizeTemplate = "mobile",
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxRetries = DEFAULT_MAX_RETRIES,
   fetchImpl = globalThis.fetch,
   sleepImpl = sleep,
 }) => {
+  apiKey = normalizeEnvValue(apiKey);
+
   if (!prompt) {
     throw new Error("Prompt 不能为空。");
   }

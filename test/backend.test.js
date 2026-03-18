@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { ApiError, validateGeneratePayload, validateUploadedFile } from "../api/generate.js";
+import { ApiError, createApiRouter, validateGeneratePayload, validateUploadedFile } from "../api/generate.js";
+import { getStartupEnvDiagnostics } from "../server.js";
 import { createDoubaoRequestBody, generatePoster, resolveImageSize } from "../utils/doubao.js";
 import { buildPrompt } from "../utils/prompt-builder.js";
 
@@ -117,6 +121,17 @@ test("generatePoster rejects requests when API key is missing", async () => {
   );
 });
 
+test("generatePoster rejects whitespace-only API keys", async () => {
+  await assert.rejects(
+    () =>
+      generatePoster({
+        prompt: "生成培训海报",
+        apiKey: "   ",
+      }),
+    /DOUBAO_API_KEY 未配置/,
+  );
+});
+
 test("generatePoster retries and extracts a data url from b64_json", async () => {
   let attempts = 0;
 
@@ -182,4 +197,125 @@ test("generatePoster normalizes direct base64 image responses", async () => {
 
   assert.deepEqual(requestBody.image, ["https://cdn.example.com/logo.png"]);
   assert.equal(result.imageUrl, `data:image/png;base64,${rawBase64}`);
+});
+
+test("createApiRouter reads DOUBAO_API_KEY from process.env at request time", async () => {
+  const previousApiKey = process.env.DOUBAO_API_KEY;
+  const uploadDir = mkdtempSync(join(tmpdir(), "ai-poster-generator-test-"));
+  let receivedApiKey = "";
+  const routes = new Map();
+
+  const Router = () => ({
+    post(path, ...handlers) {
+      routes.set(path, handlers);
+      return this;
+    },
+  });
+  const multerStub = Object.assign(
+    () => ({
+      fields: () => (_request, _response, next) => next(),
+    }),
+    {
+      diskStorage: () => ({}),
+    },
+  );
+
+  delete process.env.DOUBAO_API_KEY;
+
+  try {
+    createApiRouter({
+      Router,
+      multer: multerStub,
+      uploadDir,
+      generatePosterImpl: async ({ apiKey }) => {
+        receivedApiKey = apiKey;
+        return {
+          imageUrl: "https://cdn.example.com/generated.png",
+          provider: "doubao-seed",
+          attempts: 1,
+        };
+      },
+    });
+
+    const [maybeHandleMultipart, handleGenerate] = routes.get("/generate");
+    const request = {
+      is: () => false,
+      files: undefined,
+      body: {
+        title: "运行时密钥测试",
+      },
+      protocol: "http",
+      get: () => "localhost:3000",
+    };
+    const response = {
+      statusCode: 200,
+      payload: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.payload = payload;
+        return this;
+      },
+    };
+
+    process.env.DOUBAO_API_KEY = "runtime-test-key";
+
+    await new Promise((resolve, reject) => {
+      maybeHandleMultipart(request, response, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+    let forwardedError;
+    await handleGenerate(request, response, (error) => {
+      forwardedError = error;
+    });
+
+    assert.equal(forwardedError, undefined);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload?.success, true);
+    assert.equal(receivedApiKey, "runtime-test-key");
+  } finally {
+    if (previousApiKey === undefined) {
+      delete process.env.DOUBAO_API_KEY;
+    } else {
+      process.env.DOUBAO_API_KEY = previousApiKey;
+    }
+
+    rmSync(uploadDir, { recursive: true, force: true });
+  }
+});
+
+test("getStartupEnvDiagnostics reports Doubao env availability", () => {
+  const previousApiKey = process.env.DOUBAO_API_KEY;
+  const previousEndpoint = process.env.DOUBAO_API_ENDPOINT;
+
+  try {
+    process.env.DOUBAO_API_KEY = "  runtime-test-key  ";
+    process.env.DOUBAO_API_ENDPOINT = "https://example.com/doubao";
+
+    const diagnostics = getStartupEnvDiagnostics();
+
+    assert.equal(diagnostics.hasDoubaoApiKey, true);
+    assert.equal(diagnostics.doubaoApiKeyPreview, "runt***-key");
+    assert.equal(diagnostics.doubaoApiEndpoint, "https://example.com/doubao");
+  } finally {
+    if (previousApiKey === undefined) {
+      delete process.env.DOUBAO_API_KEY;
+    } else {
+      process.env.DOUBAO_API_KEY = previousApiKey;
+    }
+
+    if (previousEndpoint === undefined) {
+      delete process.env.DOUBAO_API_ENDPOINT;
+    } else {
+      process.env.DOUBAO_API_ENDPOINT = previousEndpoint;
+    }
+  }
 });

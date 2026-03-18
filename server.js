@@ -1,20 +1,57 @@
-import "dotenv/config";
-
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import cors from "cors";
+import dotenv from "dotenv";
 import express from "express";
 import multer from "multer";
 
-import { ApiError, cleanupStaleUploads, createApiRouter } from "./api/generate.js";
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const envFilePath = resolve(__dirname, ".env");
+const dotenvResult = dotenv.config({ path: envFilePath });
+const { ApiError, cleanupStaleUploads, createApiRouter } = await import("./api/generate.js");
 const distDir = resolve(__dirname, "dist");
 const uploadDir = resolve(process.env.UPLOAD_DIR || join(tmpdir(), "ai-poster-generator-uploads"));
 const port = Number(process.env.PORT || 3000);
+const getDoubaoApiKey = () => String(process.env.DOUBAO_API_KEY || "").trim();
+
+const maskSecret = (value) => {
+  if (!value) {
+    return "(missing)";
+  }
+
+  const normalized = String(value).trim();
+
+  if (normalized.length <= 8) {
+    return `${normalized.slice(0, 2)}***`;
+  }
+
+  return `${normalized.slice(0, 4)}***${normalized.slice(-4)}`;
+};
+
+const getDotenvStatus = () => {
+  if (!dotenvResult?.error) {
+    return "loaded";
+  }
+
+  return dotenvResult.error.code === "ENOENT" ? "not-found" : "error";
+};
+
+const getStartupEnvDiagnostics = () => ({
+  nodeEnv: process.env.NODE_ENV || "development",
+  port,
+  uploadDir,
+  envFilePath,
+  dotenvStatus: getDotenvStatus(),
+  dotenvKeys: Object.keys(dotenvResult?.parsed || {}),
+  hasDoubaoApiKey: Boolean(getDoubaoApiKey()),
+  doubaoApiKeyPreview: maskSecret(process.env.DOUBAO_API_KEY),
+  doubaoModel: process.env.DOUBAO_MODEL || "(default)",
+  doubaoApiEndpoint: process.env.DOUBAO_API_ENDPOINT || "(default)",
+  corsOrigin: process.env.CORS_ORIGIN || "(allow-all)",
+});
 
 const normalizeCorsOrigin = () => {
   if (!process.env.CORS_ORIGIN) {
@@ -44,7 +81,7 @@ export const createApp = () => {
       data: {
         status: "ok",
         uploadDir,
-        provider: process.env.DOUBAO_API_KEY ? "doubao-seed" : "unconfigured",
+        provider: getDoubaoApiKey() ? "doubao-seed" : "unconfigured",
       },
     });
   });
@@ -107,6 +144,8 @@ const app = createApp();
 const shouldStartServer = process.argv[1] && resolve(process.argv[1]) === __filename;
 
 if (shouldStartServer) {
+  console.log("DOUBAO_API_KEY:", getDoubaoApiKey() ? "SET" : "NOT SET");
+
   cleanupStaleUploads(uploadDir).catch((error) => {
     console.error("Failed to cleanup stale uploads on startup:", error);
   });
@@ -119,7 +158,8 @@ if (shouldStartServer) {
 
   app.listen(port, "0.0.0.0", () => {
     console.log(`AI Poster Generator API listening on port ${port}`);
+    console.log("Startup environment diagnostics:", getStartupEnvDiagnostics());
   });
 }
 
-export { uploadDir };
+export { getStartupEnvDiagnostics, uploadDir };

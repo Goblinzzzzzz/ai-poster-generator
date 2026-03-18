@@ -55,3 +55,13 @@ npm run build
 ## Railway
 
 The repository includes `railway.json`, `Procfile`, and `.env.example`. Railway will install dependencies, build the Vite app, and run `server.js`.
+
+Set backend variables in Railway exactly as named below. They are case-sensitive:
+
+- `DOUBAO_API_KEY`
+- `DOUBAO_MODEL` (optional)
+- `DOUBAO_API_ENDPOINT` (optional)
+- `CORS_ORIGIN` (optional)
+- `UPLOAD_DIR` (optional)
+
+`VITE_POSTER_API_URL` is a frontend variable and does not replace `DOUBAO_API_KEY`.

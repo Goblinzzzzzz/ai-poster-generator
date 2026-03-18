@@ -73,6 +73,8 @@ const safeUnlink = async (file) => {
 
 const getMaxFileSize = (fieldName) => FILE_SIZE_LIMITS[fieldName] || FILE_SIZE_LIMITS.file;
 
+const normalizeEnvValue = (value) => (typeof value === "string" ? value.trim() : value);
+
 export const validateUploadedFile = (file, fieldName = "file") => {
   if (!file) {
     return null;
@@ -164,7 +166,7 @@ export const createApiRouter = ({
   Router,
   multer,
   uploadDir,
-  apiKey = process.env.DOUBAO_API_KEY,
+  getApiKey = () => process.env.DOUBAO_API_KEY,
   generatePosterImpl = generatePoster,
 }) => {
   if (!Router || !multer) {
@@ -239,6 +241,7 @@ export const createApiRouter = ({
         referenceImageUrl,
       });
       const promptResult = buildPrompt(normalizedPayload);
+      const apiKey = normalizeEnvValue(typeof getApiKey === "function" ? getApiKey(request) : getApiKey);
 
       if (!apiKey) {
         throw createApiError(
