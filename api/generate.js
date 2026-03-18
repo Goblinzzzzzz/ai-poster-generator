@@ -3,6 +3,7 @@ import { readdir, stat, unlink } from "node:fs/promises";
 import { extname, join } from "node:path";
 
 import { generatePoster } from "../utils/doubao.js";
+import { DOUBAO_API_KEY_ENV_NAMES, describeEnvValue, getEnvironmentVariableDiagnostics, resolveDoubaoApiKey } from "../utils/env.js";
 import { buildPrompt } from "../utils/prompt-builder.js";
 
 const ONE_MB = 1024 * 1024;
@@ -21,33 +22,6 @@ const sanitizeText = (value, maxLength = 1000) =>
     .trim()
     .replace(/\s+/g, " ")
     .slice(0, maxLength);
-
-const maskSecret = (value) => {
-  if (!value) {
-    return "(missing)";
-  }
-
-  const normalized = String(value).trim();
-
-  if (normalized.length <= 8) {
-    return `${normalized.slice(0, 2)}***`;
-  }
-
-  return `${normalized.slice(0, 4)}***${normalized.slice(-4)}`;
-};
-
-const describeApiKey = (value) => {
-  const rawValue = value === undefined ? undefined : String(value);
-  const normalizedValue = typeof rawValue === "string" ? rawValue.trim() : rawValue;
-
-  return {
-    rawValue,
-    normalizedValue,
-    hasValue: Boolean(normalizedValue),
-    length: typeof normalizedValue === "string" ? normalizedValue.length : 0,
-    preview: maskSecret(normalizedValue),
-  };
-};
 
 const getRequestDebugId = (request) => String(request?.posterRequestId || "no-request-id");
 
@@ -106,8 +80,6 @@ const safeUnlink = async (file) => {
 };
 
 const getMaxFileSize = (fieldName) => FILE_SIZE_LIMITS[fieldName] || FILE_SIZE_LIMITS.file;
-
-const normalizeEnvValue = (value) => (typeof value === "string" ? value.trim() : value);
 
 export const validateUploadedFile = (file, fieldName = "file") => {
   if (!file) {
@@ -211,8 +183,8 @@ export const createApiRouter = ({
   ensureUploadDir(uploadDir);
   logDebug("createApiRouter initialized:", {
     uploadDir,
-    explicitApiKey: describeApiKey(apiKey),
-    envApiKeyAtInit: describeApiKey(process.env.DOUBAO_API_KEY),
+    explicitApiKey: describeEnvValue(apiKey),
+    envApiKeyAtInit: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
     hasGetApiKeyResolver: typeof getApiKey === "function",
   });
 
@@ -257,13 +229,15 @@ export const createApiRouter = ({
   ]);
 
   const maybeHandleMultipart = (request, response, next) => {
+    const isMultipart = request.is("multipart/form-data");
+
     logDebug("maybeHandleMultipart invoked:", {
       requestId: getRequestDebugId(request),
       contentType: request.get?.("content-type"),
-      isMultipart: request.is("multipart/form-data"),
+      isMultipart,
     });
 
-    if (request.is("multipart/form-data")) {
+    if (isMultipart) {
       generateUpload(request, response, next);
       return;
     }
@@ -277,18 +251,20 @@ export const createApiRouter = ({
       typeof getApiKey === "function"
         ? getApiKey(request)
         : getApiKey;
-    const explicitApiKey = normalizeEnvValue(apiKey);
-    const resolvedApiKey = normalizeEnvValue(resolverValue) || explicitApiKey || normalizeEnvValue(process.env.DOUBAO_API_KEY);
+    const resolvedApiKey = resolveDoubaoApiKey({
+      explicitValue: apiKey,
+      resolverValue,
+    });
 
     logDebug("resolved API key for request:", {
       requestId,
-      fromGetApiKey: describeApiKey(resolverValue),
-      fromExplicitApiKey: describeApiKey(apiKey),
-      fromProcessEnv: describeApiKey(process.env.DOUBAO_API_KEY),
-      resolvedApiKey: describeApiKey(resolvedApiKey),
+      fromGetApiKey: describeEnvValue(resolverValue),
+      fromExplicitApiKey: describeEnvValue(apiKey),
+      envCandidates: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
+      resolvedApiKey,
     });
 
-    return resolvedApiKey;
+    return resolvedApiKey.value;
   };
 
   router.post("/generate", maybeHandleMultipart, async (request, response, next) => {
@@ -321,13 +297,13 @@ export const createApiRouter = ({
         normalizedPayload,
         promptLength: promptResult.prompt.length,
         negativePromptLength: promptResult.negativePrompt.length,
-        apiKey: describeApiKey(resolvedApiKey),
+        apiKey: describeEnvValue(resolvedApiKey),
       });
 
       if (!resolvedApiKey) {
         logDebug("missing API key before calling generatePoster:", {
           requestId,
-          processEnvApiKey: describeApiKey(process.env.DOUBAO_API_KEY),
+          processEnvApiKeyCandidates: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
         });
         throw createApiError(
           503,
@@ -338,7 +314,7 @@ export const createApiRouter = ({
 
       logDebug("calling generatePosterImpl:", {
         requestId,
-        apiKey: describeApiKey(resolvedApiKey),
+        apiKey: describeEnvValue(resolvedApiKey),
         referenceImages: [referenceImageUrl, logoUrl].filter(Boolean),
       });
       const generationResult = await generatePosterImpl({
@@ -380,7 +356,7 @@ export const createApiRouter = ({
       await Promise.all([safeUnlink(logoFile), safeUnlink(referenceImageFile)]);
       logDebug("generate route failed:", {
         requestId,
-        apiKey: describeApiKey(process.env.DOUBAO_API_KEY),
+        apiKey: describeEnvValue(normalizedApiKey),
         errorName: error?.name,
         errorMessage: error?.message,
         stack: error?.stack,

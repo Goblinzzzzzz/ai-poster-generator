@@ -7,6 +7,13 @@ import dotenv from "dotenv";
 import express from "express";
 import multer from "multer";
 
+import {
+  DOUBAO_API_KEY_ENV_NAMES,
+  describeEnvValue,
+  getEnvironmentVariableDiagnostics,
+  resolveDoubaoApiKey,
+} from "./utils/env.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const envFilePath = resolve(__dirname, ".env");
@@ -15,37 +22,10 @@ const { ApiError, cleanupStaleUploads, createApiRouter } = await import("./api/g
 const distDir = resolve(__dirname, "dist");
 const uploadDir = resolve(process.env.UPLOAD_DIR || join(tmpdir(), "ai-poster-generator-uploads"));
 const port = Number(process.env.PORT || 3000);
-const getDoubaoApiKey = () => String(process.env.DOUBAO_API_KEY || "").trim();
-const getRawDoubaoApiKey = () => process.env.DOUBAO_API_KEY;
+const getDoubaoApiKeyResolution = () => resolveDoubaoApiKey();
+const getDoubaoApiKey = () => getDoubaoApiKeyResolution().value;
 
 const createRequestDebugId = () => `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
-const maskSecret = (value) => {
-  if (!value) {
-    return "(missing)";
-  }
-
-  const normalized = String(value).trim();
-
-  if (normalized.length <= 8) {
-    return `${normalized.slice(0, 2)}***`;
-  }
-
-  return `${normalized.slice(0, 4)}***${normalized.slice(-4)}`;
-};
-
-const describeApiKey = (value) => {
-  const rawValue = value === undefined ? undefined : String(value);
-  const normalizedValue = typeof rawValue === "string" ? rawValue.trim() : rawValue;
-
-  return {
-    rawValue,
-    normalizedValue,
-    hasValue: Boolean(normalizedValue),
-    length: typeof normalizedValue === "string" ? normalizedValue.length : 0,
-    preview: maskSecret(normalizedValue),
-  };
-};
 
 const getDotenvStatus = () => {
   if (!dotenvResult?.error) {
@@ -62,11 +42,26 @@ const getStartupEnvDiagnostics = () => ({
   envFilePath,
   dotenvStatus: getDotenvStatus(),
   dotenvKeys: Object.keys(dotenvResult?.parsed || {}),
+  dotenvError:
+    dotenvResult?.error
+      ? {
+          name: dotenvResult.error.name,
+          message: dotenvResult.error.message,
+          code: dotenvResult.error.code,
+        }
+      : null,
+  localDotenvConfigCallCount: 1,
   hasDoubaoApiKey: Boolean(getDoubaoApiKey()),
-  doubaoApiKeyPreview: maskSecret(process.env.DOUBAO_API_KEY),
+  doubaoApiKeyResolution: getDoubaoApiKeyResolution(),
+  doubaoApiKeyCandidates: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
   doubaoModel: process.env.DOUBAO_MODEL || "(default)",
   doubaoApiEndpoint: process.env.DOUBAO_API_ENDPOINT || "(default)",
   corsOrigin: process.env.CORS_ORIGIN || "(allow-all)",
+  railwayEnvironmentVariables: getEnvironmentVariableDiagnostics(
+    Object.keys(process.env)
+      .filter((key) => key.startsWith("RAILWAY_"))
+      .sort(),
+  ),
 });
 
 const getSortedEnvironmentVariables = () =>
@@ -84,12 +79,15 @@ const normalizeCorsOrigin = () => {
 
 export const createApp = () => {
   const app = express();
-  const routerApiKeyAtMount = getRawDoubaoApiKey();
+  const routerApiKeyAtMount = getDoubaoApiKey();
+
+  console.log("[server.js] createApp started:", {
+    startupEnvDiagnostics: getStartupEnvDiagnostics(),
+  });
 
   console.log("[server.js] createApp router configuration:", {
     uploadDir,
-    apiKey: describeApiKey(routerApiKeyAtMount),
-    hasGetApiKeyResolver: true,
+    apiKey: describeEnvValue(routerApiKeyAtMount),
   });
 
   app.use(
@@ -110,7 +108,7 @@ export const createApp = () => {
         requestId,
         method: request.method,
         path: request.originalUrl || request.url,
-        apiKey: describeApiKey(getRawDoubaoApiKey()),
+        apiKeyResolution: getDoubaoApiKeyResolution(),
       });
     }
 
@@ -128,6 +126,23 @@ export const createApp = () => {
     });
   });
 
+  app.get("/api/debug-env", (request, response) => {
+    const requestId = String(request.posterRequestId || "no-request-id");
+    const payload = {
+      success: true,
+      data: {
+        requestId,
+        startup: getStartupEnvDiagnostics(),
+        doubaoApiKeyResolution: getDoubaoApiKeyResolution(),
+        doubaoApiKeyCandidates: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
+        allEnvironmentVariables: getSortedEnvironmentVariables(),
+      },
+    };
+
+    console.log("[server.js] /api/debug-env response payload:", payload);
+    response.status(200).json(payload);
+  });
+
   app.use("/uploads", express.static(uploadDir, { fallthrough: false, maxAge: "24h" }));
   app.use(
     "/api",
@@ -135,7 +150,7 @@ export const createApp = () => {
       Router: express.Router,
       multer,
       uploadDir,
-      getApiKey: getDoubaoApiKey,
+      apiKey: routerApiKeyAtMount,
     }),
   );
 
@@ -189,13 +204,29 @@ export const createApp = () => {
 
 const createApiError = (statusCode, code, message, details) => new ApiError(statusCode, code, message, details);
 
-const app = createApp();
-
 const shouldStartServer = process.argv[1] && resolve(process.argv[1]) === __filename;
 
 if (shouldStartServer) {
+  const app = createApp();
+
+  console.log("[server.js] dotenv.config result:", {
+    envFilePath,
+    status: getDotenvStatus(),
+    parsedKeys: Object.keys(dotenvResult?.parsed || {}),
+    error:
+      dotenvResult?.error
+        ? {
+            name: dotenvResult.error.name,
+            message: dotenvResult.error.message,
+            code: dotenvResult.error.code,
+          }
+        : null,
+  });
   console.log("[server.js] environment variables on startup:", getSortedEnvironmentVariables());
-  console.log("[server.js] startup DOUBAO_API_KEY diagnostics:", describeApiKey(getRawDoubaoApiKey()));
+  console.log("[server.js] startup Doubao API key resolution:", getDoubaoApiKeyResolution());
+  console.log("[server.js] startup Doubao API key candidate diagnostics:", getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES));
+  console.log("[server.js] startup model diagnostics:", describeEnvValue(process.env.DOUBAO_MODEL));
+  console.log("[server.js] startup endpoint diagnostics:", describeEnvValue(process.env.DOUBAO_API_ENDPOINT));
 
   cleanupStaleUploads(uploadDir).catch((error) => {
     console.error("Failed to cleanup stale uploads on startup:", error);

@@ -4,12 +4,14 @@
     "builder": "NIXPACKS",
     "buildCommand": "npm install && npm run build",
     "watchPatterns": [
+      "api/**",
       "src/**",
       "public/**",
       "index.html",
       "package.json",
       "postcss.config.mjs",
       "server.js",
+      "utils/**",
       "vite.config.js"
     ]
   },

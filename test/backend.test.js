@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { ApiError, createApiRouter, validateGeneratePayload, validateUploadedFile } from "../api/generate.js";
-import { getStartupEnvDiagnostics } from "../server.js";
+import { createApp, getStartupEnvDiagnostics } from "../server.js";
 import { createDoubaoRequestBody, generatePoster, resolveImageSize } from "../utils/doubao.js";
 import { buildPrompt } from "../utils/prompt-builder.js";
 
@@ -199,10 +199,42 @@ test("generatePoster normalizes direct base64 image responses", async () => {
   assert.equal(result.imageUrl, `data:image/png;base64,${rawBase64}`);
 });
 
-test("createApiRouter reads DOUBAO_API_KEY from process.env at request time", async () => {
-  const previousApiKey = process.env.DOUBAO_API_KEY;
+test("createApiRouter requires an explicit apiKey", () => {
+  const uploadDir = mkdtempSync(join(tmpdir(), "ai-poster-generator-test-"));
+
+  const Router = () => ({
+    post(path, ...handlers) {
+      return this;
+    },
+  });
+  const multerStub = Object.assign(
+    () => ({
+      fields: () => (_request, _response, next) => next(),
+    }),
+    {
+      diskStorage: () => ({}),
+    },
+  );
+
+  try {
+    assert.throws(
+      () =>
+        createApiRouter({
+          Router,
+          multer: multerStub,
+          uploadDir,
+        }),
+      /createApiRouter 需要传入 apiKey/,
+    );
+  } finally {
+    rmSync(uploadDir, { recursive: true, force: true });
+  }
+});
+
+test("createApiRouter forwards the provided apiKey directly", async () => {
   const uploadDir = mkdtempSync(join(tmpdir(), "ai-poster-generator-test-"));
   let receivedApiKey = "";
+  let receivedRequestId = "";
   const routes = new Map();
 
   const Router = () => ({
@@ -220,15 +252,15 @@ test("createApiRouter reads DOUBAO_API_KEY from process.env at request time", as
     },
   );
 
-  delete process.env.DOUBAO_API_KEY;
-
   try {
     createApiRouter({
       Router,
       multer: multerStub,
       uploadDir,
-      generatePosterImpl: async ({ apiKey }) => {
+      apiKey: "  explicit-router-key  ",
+      generatePosterImpl: async ({ apiKey, requestId }) => {
         receivedApiKey = apiKey;
+        receivedRequestId = requestId;
         return {
           imageUrl: "https://cdn.example.com/generated.png",
           provider: "doubao-seed",
@@ -239,13 +271,14 @@ test("createApiRouter reads DOUBAO_API_KEY from process.env at request time", as
 
     const [maybeHandleMultipart, handleGenerate] = routes.get("/generate");
     const request = {
+      posterRequestId: "req-test-123",
       is: () => false,
       files: undefined,
       body: {
-        title: "运行时密钥测试",
+        title: "显式密钥测试",
       },
       protocol: "http",
-      get: () => "localhost:3000",
+      get: (headerName) => (headerName === "host" ? "localhost:3000" : undefined),
     };
     const response = {
       statusCode: 200,
@@ -260,8 +293,6 @@ test("createApiRouter reads DOUBAO_API_KEY from process.env at request time", as
       },
     };
 
-    process.env.DOUBAO_API_KEY = "runtime-test-key";
-
     await new Promise((resolve, reject) => {
       maybeHandleMultipart(request, response, (error) => {
         if (error) {
@@ -272,6 +303,7 @@ test("createApiRouter reads DOUBAO_API_KEY from process.env at request time", as
         resolve();
       });
     });
+
     let forwardedError;
     await handleGenerate(request, response, (error) => {
       forwardedError = error;
@@ -279,8 +311,32 @@ test("createApiRouter reads DOUBAO_API_KEY from process.env at request time", as
 
     assert.equal(forwardedError, undefined);
     assert.equal(response.statusCode, 200);
-    assert.equal(response.payload?.success, true);
-    assert.equal(receivedApiKey, "runtime-test-key");
+    assert.equal(receivedApiKey, "explicit-router-key");
+    assert.equal(receivedRequestId, "req-test-123");
+  } finally {
+    rmSync(uploadDir, { recursive: true, force: true });
+  }
+});
+
+test("getStartupEnvDiagnostics reports Doubao env availability", () => {
+  const previousApiKey = process.env.DOUBAO_API_KEY;
+  const previousDoubaoKey = process.env.DOUBAO_KEY;
+  const previousGenericApiKey = process.env.API_KEY;
+  const previousEndpoint = process.env.DOUBAO_API_ENDPOINT;
+
+  try {
+    process.env.DOUBAO_API_KEY = "  runtime-test-key  ";
+    delete process.env.DOUBAO_KEY;
+    delete process.env.API_KEY;
+    process.env.DOUBAO_API_ENDPOINT = "https://example.com/doubao";
+
+    const diagnostics = getStartupEnvDiagnostics();
+
+    assert.equal(diagnostics.hasDoubaoApiKey, true);
+    assert.equal(diagnostics.doubaoApiKeyResolution.source, "process.env.DOUBAO_API_KEY");
+    assert.equal(diagnostics.doubaoApiKeyResolution.details.first4Chars, "runt");
+    assert.equal(diagnostics.doubaoApiKeyResolution.details.trimmedLength, 16);
+    assert.equal(diagnostics.doubaoApiEndpoint, "https://example.com/doubao");
   } finally {
     if (previousApiKey === undefined) {
       delete process.env.DOUBAO_API_KEY;
@@ -288,28 +344,85 @@ test("createApiRouter reads DOUBAO_API_KEY from process.env at request time", as
       process.env.DOUBAO_API_KEY = previousApiKey;
     }
 
-    rmSync(uploadDir, { recursive: true, force: true });
+    if (previousDoubaoKey === undefined) {
+      delete process.env.DOUBAO_KEY;
+    } else {
+      process.env.DOUBAO_KEY = previousDoubaoKey;
+    }
+
+    if (previousGenericApiKey === undefined) {
+      delete process.env.API_KEY;
+    } else {
+      process.env.API_KEY = previousGenericApiKey;
+    }
+
+    if (previousEndpoint === undefined) {
+      delete process.env.DOUBAO_API_ENDPOINT;
+    } else {
+      process.env.DOUBAO_API_ENDPOINT = previousEndpoint;
+    }
   }
 });
 
-test("getStartupEnvDiagnostics reports Doubao env availability", () => {
+test("debug endpoint returns complete environment diagnostics", async () => {
   const previousApiKey = process.env.DOUBAO_API_KEY;
+  const previousDoubaoKey = process.env.DOUBAO_KEY;
+  const previousGenericApiKey = process.env.API_KEY;
   const previousEndpoint = process.env.DOUBAO_API_ENDPOINT;
+  const app = createApp();
 
   try {
-    process.env.DOUBAO_API_KEY = "  runtime-test-key  ";
-    process.env.DOUBAO_API_ENDPOINT = "https://example.com/doubao";
+    delete process.env.DOUBAO_API_KEY;
+    process.env.DOUBAO_KEY = "railway-debug-key";
+    delete process.env.API_KEY;
+    process.env.DOUBAO_API_ENDPOINT = "https://example.com/debug-doubao";
 
-    const diagnostics = getStartupEnvDiagnostics();
+    const debugLayer = app._router.stack.find((layer) => layer.route?.path === "/api/debug-env");
+    assert.ok(debugLayer);
 
-    assert.equal(diagnostics.hasDoubaoApiKey, true);
-    assert.equal(diagnostics.doubaoApiKeyPreview, "runt***-key");
-    assert.equal(diagnostics.doubaoApiEndpoint, "https://example.com/doubao");
+    const request = {
+      posterRequestId: "req-debug-env",
+    };
+    const response = {
+      statusCode: 200,
+      payload: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.payload = payload;
+        return this;
+      },
+    };
+
+    await debugLayer.route.stack[0].handle(request, response);
+    const payload = response.payload;
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.data.requestId, "req-debug-env");
+    assert.equal(payload.data.doubaoApiKeyResolution.source, "process.env.DOUBAO_KEY");
+    assert.equal(payload.data.doubaoApiKeyResolution.details.first4Chars, "rail");
+    assert.equal(payload.data.allEnvironmentVariables.DOUBAO_KEY, "railway-debug-key");
+    assert.equal(payload.data.startup.doubaoApiKeyCandidates.DOUBAO_KEY.first4Chars, "rail");
   } finally {
     if (previousApiKey === undefined) {
       delete process.env.DOUBAO_API_KEY;
     } else {
       process.env.DOUBAO_API_KEY = previousApiKey;
+    }
+
+    if (previousDoubaoKey === undefined) {
+      delete process.env.DOUBAO_KEY;
+    } else {
+      process.env.DOUBAO_KEY = previousDoubaoKey;
+    }
+
+    if (previousGenericApiKey === undefined) {
+      delete process.env.API_KEY;
+    } else {
+      process.env.API_KEY = previousGenericApiKey;
     }
 
     if (previousEndpoint === undefined) {
