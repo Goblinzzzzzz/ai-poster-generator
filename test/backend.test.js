@@ -116,6 +116,15 @@ test("createDoubaoRequestBody sends a single reference image as a string", () =>
   assert.equal(body.image, "https://cdn.example.com/reference.png");
 });
 
+test("createDoubaoRequestBody omits image when no reference images are provided", () => {
+  const body = createDoubaoRequestBody({
+    prompt: "生成品牌海报",
+    referenceImages: [],
+  });
+
+  assert.equal("image" in body, false);
+});
+
 test("resolveImageSize keeps poster ratios within the supported range", () => {
   assert.equal(resolveImageSize("mobile"), "1024x1792");
   assert.equal(resolveImageSize("wechat_cover"), "1792x768");
@@ -421,6 +430,88 @@ test("createApiRouter builds Railway-safe public upload urls from forwarded head
 
     assert.equal(forwardedError, undefined);
     assert.deepEqual(receivedReferenceImages, ["https://poster.example.com/uploads/logo-generated.png"]);
+  } finally {
+    rmSync(uploadDir, { recursive: true, force: true });
+  }
+});
+
+test("createApiRouter passes an empty referenceImages array when logo and reference image are both omitted", async () => {
+  const uploadDir = mkdtempSync(join(tmpdir(), "ai-poster-generator-test-"));
+  const routes = new Map();
+  let receivedReferenceImages = [];
+
+  const Router = () => ({
+    post(path, ...handlers) {
+      routes.set(path, handlers);
+      return this;
+    },
+  });
+  const multerStub = Object.assign(
+    () => ({
+      fields: () => (_request, _response, next) => next(),
+    }),
+    {
+      diskStorage: () => ({}),
+    },
+  );
+
+  try {
+    createApiRouter({
+      Router,
+      multer: multerStub,
+      uploadDir,
+      apiKey: "explicit-router-key",
+      generatePosterImpl: async ({ referenceImages }) => {
+        receivedReferenceImages = referenceImages;
+        return {
+          imageUrl: "https://cdn.example.com/generated.png",
+          provider: "doubao-seed",
+          attempts: 1,
+        };
+      },
+    });
+
+    const [, handleGenerate] = routes.get("/generate");
+    const request = {
+      posterRequestId: "req-no-assets",
+      is: () => false,
+      files: {},
+      body: {
+        title: "无素材海报",
+        logoUrl: "   ",
+        referenceImageUrl: "   ",
+      },
+      protocol: "https",
+      get(headerName) {
+        if (headerName === "host") {
+          return "poster.example.com";
+        }
+
+        return undefined;
+      },
+    };
+    const response = {
+      statusCode: 200,
+      payload: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.payload = payload;
+        return this;
+      },
+    };
+
+    let forwardedError;
+    await handleGenerate(request, response, (error) => {
+      forwardedError = error;
+    });
+
+    assert.equal(forwardedError, undefined);
+    assert.deepEqual(receivedReferenceImages, []);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload?.success, true);
   } finally {
     rmSync(uploadDir, { recursive: true, force: true });
   }

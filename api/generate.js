@@ -300,14 +300,15 @@ export const createApiRouter = ({
         logoUrl,
         referenceImageUrl,
       });
+      const referenceImages = [normalizedPayload.referenceImageUrl, normalizedPayload.logoUrl].filter(Boolean);
       const promptResult = buildPrompt(normalizedPayload);
 
       logDebug("prepared prompt and payload for generation:", {
         requestId,
         normalizedPayload,
         publicAssetUrls: {
-          logoUrl,
-          referenceImageUrl,
+          logoUrl: normalizedPayload.logoUrl,
+          referenceImageUrl: normalizedPayload.referenceImageUrl,
         },
         promptLength: promptResult.prompt.length,
         negativePromptLength: promptResult.negativePrompt.length,
@@ -329,14 +330,14 @@ export const createApiRouter = ({
       logDebug("calling generatePosterImpl:", {
         requestId,
         apiKey: describeEnvValue(normalizedApiKey),
-        referenceImages: [referenceImageUrl, logoUrl].filter(Boolean),
+        referenceImages,
       });
       const generationResult = await generatePosterImpl({
         prompt: promptResult.prompt,
         negativePrompt: promptResult.negativePrompt,
         sizeTemplate: normalizedPayload.sizeTemplate,
         apiKey: normalizedApiKey,
-        referenceImages: [referenceImageUrl, logoUrl].filter(Boolean),
+        referenceImages,
         requestId,
       });
 

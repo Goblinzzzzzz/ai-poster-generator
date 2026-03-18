@@ -582,7 +582,7 @@ function App() {
                   <span className="section-kicker">03</span>
                   <h2>上传品牌素材</h2>
                 </div>
-                <p>上传素材可帮助模型更好地对齐品牌识别与视觉质感。</p>
+                <p>上传素材可帮助模型更好地对齐品牌识别与视觉质感，Logo 与参考图均为可选。</p>
               </div>
 
               <div className="upload-grid">
@@ -599,10 +599,10 @@ function App() {
                     onChange={handleFileChange('logo')}
                     className="sr-only"
                   />
-                  <span className="upload-badge">{logo ? '已上传' : '必填'}</span>
-                  <strong>Logo 文件</strong>
+                  <span className="upload-badge upload-badge-optional">{logo ? '已上传' : '可选'}</span>
+                  <strong>Logo 文件（可选）</strong>
                   <small>支持 PNG / JPG，大小不超过 5MB。可拖拽到此处上传。</small>
-                  <span className="upload-file">{logo ? logo.name : '点击选择品牌 Logo'}</span>
+                  <span className="upload-file">{logo ? logo.name : '点击选择品牌 Logo（可选）'}</span>
                 </label>
 
                 <label
@@ -619,10 +619,10 @@ function App() {
                     className="sr-only"
                   />
                   <span className="upload-badge upload-badge-optional">可选</span>
-                  <strong>参考图</strong>
+                  <strong>参考图（可选）</strong>
                   <small>支持 PNG / JPG，大小不超过 10MB。可拖拽到此处上传。</small>
                   <span className="upload-file">
-                    {referenceImage ? referenceImage.name : '上传参考图辅助控制风格'}
+                    {referenceImage ? referenceImage.name : '上传参考图辅助控制风格（可选）'}
                   </span>
                 </label>
               </div>
