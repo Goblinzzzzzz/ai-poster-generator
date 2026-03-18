@@ -56,6 +56,49 @@ test("validateGeneratePayload rejects missing title", () => {
   );
 });
 
+test("validateGeneratePayload rejects unsupported enum values", () => {
+  assert.throws(
+    () =>
+      validateGeneratePayload({
+        title: "无效尺寸",
+        sizeTemplate: "billboard",
+      }),
+    (error) =>
+      error instanceof ApiError &&
+      error.statusCode === 400 &&
+      error.code === "VALIDATION_ERROR" &&
+      /sizeTemplate 无效/.test(error.message),
+  );
+});
+
+test("validateGeneratePayload rejects unexpected fields and non-string values", () => {
+  assert.throws(
+    () =>
+      validateGeneratePayload({
+        title: "参数校验",
+        styleDesc: { invalid: true },
+      }),
+    (error) =>
+      error instanceof ApiError &&
+      error.statusCode === 400 &&
+      error.code === "VALIDATION_ERROR" &&
+      /styleDesc 必须是字符串/.test(error.message),
+  );
+
+  assert.throws(
+    () =>
+      validateGeneratePayload({
+        title: "参数校验",
+        admin: "true",
+      }),
+    (error) =>
+      error instanceof ApiError &&
+      error.statusCode === 400 &&
+      error.code === "VALIDATION_ERROR" &&
+      /不支持的字段/.test(error.message),
+  );
+});
+
 test("validateUploadedFile enforces logo size limit", () => {
   assert.throws(
     () =>
@@ -289,7 +332,7 @@ test("createApiRouter forwards the provided apiKey directly", async () => {
       },
     });
 
-    const [maybeHandleMultipart, handleGenerate] = routes.get("/generate");
+    const [generateRateLimit, maybeHandleMultipart, handleGenerate] = routes.get("/generate");
     const request = {
       posterRequestId: "req-test-123",
       is: () => false,
@@ -314,13 +357,20 @@ test("createApiRouter forwards the provided apiKey directly", async () => {
     };
 
     await new Promise((resolve, reject) => {
-      maybeHandleMultipart(request, response, (error) => {
+      generateRateLimit(request, response, (error) => {
         if (error) {
           reject(error);
           return;
         }
 
-        resolve();
+        maybeHandleMultipart(request, response, (multipartError) => {
+          if (multipartError) {
+            reject(multipartError);
+            return;
+          }
+
+          resolve();
+        });
       });
     });
 
@@ -374,7 +424,7 @@ test("createApiRouter builds Railway-safe public upload urls from forwarded head
       },
     });
 
-    const [, handleGenerate] = routes.get("/generate");
+    const [, , handleGenerate] = routes.get("/generate");
     const request = {
       posterRequestId: "req-forwarded-headers",
       is: () => false,
@@ -471,7 +521,7 @@ test("createApiRouter passes an empty referenceImages array when logo and refere
       },
     });
 
-    const [, handleGenerate] = routes.get("/generate");
+    const [, , handleGenerate] = routes.get("/generate");
     const request = {
       posterRequestId: "req-no-assets",
       is: () => false,
@@ -560,6 +610,126 @@ test("getStartupEnvDiagnostics reports Doubao env availability", () => {
     } else {
       process.env.DOUBAO_API_ENDPOINT = previousEndpoint;
     }
+  }
+});
+
+test("createApiRouter rate limits repeated generate requests from the same client", async () => {
+  const uploadDir = mkdtempSync(join(tmpdir(), "ai-poster-generator-test-"));
+  const routes = new Map();
+  let invocationCount = 0;
+
+  const Router = () => ({
+    post(path, ...handlers) {
+      routes.set(path, handlers);
+      return this;
+    },
+  });
+  const multerStub = Object.assign(
+    () => ({
+      fields: () => (_request, _response, next) => next(),
+    }),
+    {
+      diskStorage: () => ({}),
+    },
+  );
+
+  try {
+    createApiRouter({
+      Router,
+      multer: multerStub,
+      uploadDir,
+      apiKey: "explicit-router-key",
+      rateLimitMaxRequests: 1,
+      rateLimitWindowMs: 60_000,
+      nowImpl: () => 1_000,
+      generatePosterImpl: async () => {
+        invocationCount += 1;
+        return {
+          imageUrl: "https://cdn.example.com/generated.png",
+          provider: "doubao-seed",
+          attempts: 1,
+        };
+      },
+    });
+
+    const [generateRateLimit, maybeHandleMultipart, handleGenerate] = routes.get("/generate");
+    const createRequest = () => ({
+      posterRequestId: "req-rate-limit",
+      is: () => false,
+      files: {},
+      body: {
+        title: "频率限制测试",
+      },
+      ip: "203.0.113.1",
+      protocol: "https",
+      get(headerName) {
+        if (headerName === "host") {
+          return "poster.example.com";
+        }
+
+        return undefined;
+      },
+    });
+    const createResponse = () => {
+      const headers = {};
+
+      return {
+        headers,
+        statusCode: 200,
+        payload: null,
+        setHeader(name, value) {
+          headers[name] = value;
+        },
+        status(code) {
+          this.statusCode = code;
+          return this;
+        },
+        json(payload) {
+          this.payload = payload;
+          return this;
+        },
+      };
+    };
+
+    const firstRequest = createRequest();
+    const firstResponse = createResponse();
+    let firstError;
+    await new Promise((resolve, reject) => {
+      generateRateLimit(firstRequest, firstResponse, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        maybeHandleMultipart(firstRequest, firstResponse, (multipartError) => {
+          if (multipartError) {
+            reject(multipartError);
+            return;
+          }
+
+          resolve();
+        });
+      });
+    });
+    await handleGenerate(firstRequest, firstResponse, (error) => {
+      firstError = error;
+    });
+
+    const secondRequest = createRequest();
+    const secondResponse = createResponse();
+    let secondError;
+    await generateRateLimit(secondRequest, secondResponse, (error) => {
+      secondError = error;
+    });
+
+    assert.equal(firstError, undefined);
+    assert.equal(invocationCount, 1);
+    assert.ok(secondError instanceof ApiError);
+    assert.equal(secondError.statusCode, 429);
+    assert.equal(secondError.code, "RATE_LIMITED");
+    assert.equal(secondResponse.headers["Retry-After"], "60");
+  } finally {
+    rmSync(uploadDir, { recursive: true, force: true });
   }
 });
 

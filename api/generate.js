@@ -15,6 +15,26 @@ const FILE_SIZE_LIMITS = {
   referenceImage: 10 * ONE_MB,
   file: 10 * ONE_MB,
 };
+const DEFAULT_GENERATE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const DEFAULT_GENERATE_RATE_LIMIT_MAX_REQUESTS = 5;
+const MAX_GENERATE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const MAX_GENERATE_RATE_LIMIT_MAX_REQUESTS = 100;
+const ALLOWED_POSTER_TYPES = new Set(["training", "culture", "brand", "festival", "notice"]);
+const ALLOWED_SIZE_TEMPLATES = new Set(["mobile", "a4", "wechat_cover", "wechat_sub", "weibo"]);
+const ALLOWED_LOGO_POSITIONS = new Set(["auto", "top_left", "top_right", "bottom_left", "bottom_right"]);
+const ALLOWED_GENERATE_FIELDS = new Set([
+  "posterType",
+  "sizeTemplate",
+  "title",
+  "subtitle",
+  "styleDesc",
+  "customPrompt",
+  "negativePrompt",
+  "logoPosition",
+  "logoUrl",
+  "referenceImageUrl",
+]);
+const HTTP_URL_PROTOCOLS = new Set(["http:", "https:"]);
 const DEBUG_SCOPE = "[api/generate.js]";
 
 const sanitizeText = (value, maxLength = 1000) =>
@@ -24,6 +44,39 @@ const sanitizeText = (value, maxLength = 1000) =>
     .slice(0, maxLength);
 
 const getRequestDebugId = (request) => String(request?.posterRequestId || "no-request-id");
+
+const isPlainObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const getClientAddress = (request) => {
+  const forwardedFor = request.get?.("x-forwarded-for");
+
+  if (typeof forwardedFor === "string" && forwardedFor.trim()) {
+    return forwardedFor.split(",")[0].trim().slice(0, 128);
+  }
+
+  return sanitizeText(request.ip || request.socket?.remoteAddress || request.connection?.remoteAddress, 128) || "unknown";
+};
+
+const parsePositiveInteger = (value, fallbackValue, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
+  const parsedValue = Number.parseInt(String(value ?? ""), 10);
+
+  if (!Number.isFinite(parsedValue)) {
+    return fallbackValue;
+  }
+
+  return Math.min(max, Math.max(min, parsedValue));
+};
+
+const resolveGenerateRateLimitConfig = ({ windowMs, maxRequests } = {}) => ({
+  windowMs: parsePositiveInteger(windowMs, DEFAULT_GENERATE_RATE_LIMIT_WINDOW_MS, {
+    min: 1_000,
+    max: MAX_GENERATE_RATE_LIMIT_WINDOW_MS,
+  }),
+  maxRequests: parsePositiveInteger(maxRequests, DEFAULT_GENERATE_RATE_LIMIT_MAX_REQUESTS, {
+    min: 1,
+    max: MAX_GENERATE_RATE_LIMIT_MAX_REQUESTS,
+  }),
+});
 
 const logDebug = (message, details) => {
   console.error(`${DEBUG_SCOPE} ${message}`, details);
@@ -117,6 +170,28 @@ export const validateUploadedFile = (file, fieldName = "file") => {
 };
 
 export const validateGeneratePayload = (payload = {}) => {
+  if (!isPlainObject(payload)) {
+    throw createApiError(400, "VALIDATION_ERROR", "请求体格式无效。");
+  }
+
+  const unexpectedFields = Object.keys(payload).filter((fieldName) => !ALLOWED_GENERATE_FIELDS.has(fieldName));
+
+  if (unexpectedFields.length > 0) {
+    throw createApiError(400, "VALIDATION_ERROR", "请求包含不支持的字段。", {
+      fields: unexpectedFields,
+    });
+  }
+
+  for (const fieldName of ALLOWED_GENERATE_FIELDS) {
+    const fieldValue = payload[fieldName];
+
+    if (fieldValue !== undefined && fieldValue !== null && typeof fieldValue !== "string") {
+      throw createApiError(400, "VALIDATION_ERROR", `${fieldName} 必须是字符串。`, {
+        field: fieldName,
+      });
+    }
+  }
+
   const normalized = {
     posterType: sanitizeText(payload.posterType, 40) || "training",
     sizeTemplate: sanitizeText(payload.sizeTemplate, 40) || "mobile",
@@ -136,7 +211,102 @@ export const validateGeneratePayload = (payload = {}) => {
     });
   }
 
+  if (!ALLOWED_POSTER_TYPES.has(normalized.posterType)) {
+    throw createApiError(400, "VALIDATION_ERROR", "posterType 无效。", {
+      field: "posterType",
+      allowedValues: Array.from(ALLOWED_POSTER_TYPES),
+    });
+  }
+
+  if (!ALLOWED_SIZE_TEMPLATES.has(normalized.sizeTemplate)) {
+    throw createApiError(400, "VALIDATION_ERROR", "sizeTemplate 无效。", {
+      field: "sizeTemplate",
+      allowedValues: Array.from(ALLOWED_SIZE_TEMPLATES),
+    });
+  }
+
+  if (!ALLOWED_LOGO_POSITIONS.has(normalized.logoPosition)) {
+    throw createApiError(400, "VALIDATION_ERROR", "logoPosition 无效。", {
+      field: "logoPosition",
+      allowedValues: Array.from(ALLOWED_LOGO_POSITIONS),
+    });
+  }
+
+  for (const fieldName of ["logoUrl", "referenceImageUrl"]) {
+    const fieldValue = normalized[fieldName];
+
+    if (!fieldValue) {
+      continue;
+    }
+
+    let parsedUrl;
+
+    try {
+      parsedUrl = new URL(fieldValue);
+    } catch {
+      throw createApiError(400, "VALIDATION_ERROR", `${fieldName} 必须是有效的 URL。`, {
+        field: fieldName,
+      });
+    }
+
+    if (!HTTP_URL_PROTOCOLS.has(parsedUrl.protocol)) {
+      throw createApiError(400, "VALIDATION_ERROR", `${fieldName} 仅支持 http(s) URL。`, {
+        field: fieldName,
+        protocol: parsedUrl.protocol,
+      });
+    }
+  }
+
   return normalized;
+};
+
+const createGenerateRateLimitMiddleware = ({ windowMs, maxRequests, nowImpl = Date.now } = {}) => {
+  const resolvedConfig = resolveGenerateRateLimitConfig({ windowMs, maxRequests });
+  const buckets = new Map();
+
+  return (request, response, next) => {
+    const now = nowImpl();
+    const clientAddress = getClientAddress(request);
+
+    for (const [bucketKey, bucket] of buckets.entries()) {
+      if (bucket.resetAt <= now) {
+        buckets.delete(bucketKey);
+      }
+    }
+
+    const existingBucket = buckets.get(clientAddress);
+    const bucket =
+      existingBucket && existingBucket.resetAt > now
+        ? existingBucket
+        : {
+            count: 0,
+            resetAt: now + resolvedConfig.windowMs,
+          };
+
+    bucket.count += 1;
+    buckets.set(clientAddress, bucket);
+
+    const remaining = Math.max(resolvedConfig.maxRequests - bucket.count, 0);
+    response.setHeader?.("X-RateLimit-Limit", String(resolvedConfig.maxRequests));
+    response.setHeader?.("X-RateLimit-Remaining", String(remaining));
+    response.setHeader?.("X-RateLimit-Reset", String(Math.ceil(bucket.resetAt / 1000)));
+
+    if (bucket.count > resolvedConfig.maxRequests) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+
+      response.setHeader?.("Retry-After", String(retryAfterSeconds));
+      next(
+        createApiError(429, "RATE_LIMITED", "生成请求过于频繁，请稍后重试。", {
+          limit: resolvedConfig.maxRequests,
+          windowMs: resolvedConfig.windowMs,
+          retryAfterSeconds,
+        }),
+      );
+      return;
+    }
+
+    next();
+  };
 };
 
 const getForwardedHeaderValue = (request, headerName) => {
@@ -200,6 +370,9 @@ export const createApiRouter = ({
   uploadDir,
   apiKey,
   generatePosterImpl = generatePoster,
+  rateLimitWindowMs = process.env.GENERATE_RATE_LIMIT_WINDOW_MS,
+  rateLimitMaxRequests = process.env.GENERATE_RATE_LIMIT_MAX_REQUESTS,
+  nowImpl = Date.now,
 }) => {
   if (!Router || !multer) {
     throw new Error("createApiRouter 需要传入 Express Router 和 multer。");
@@ -251,6 +424,11 @@ export const createApiRouter = ({
     { name: "logo", maxCount: 1 },
     { name: "referenceImage", maxCount: 1 },
   ]);
+  const generateRateLimit = createGenerateRateLimitMiddleware({
+    windowMs: rateLimitWindowMs,
+    maxRequests: rateLimitMaxRequests,
+    nowImpl,
+  });
   const standaloneUpload = upload.fields([
     { name: "file", maxCount: 1 },
     { name: "logo", maxCount: 1 },
@@ -274,7 +452,7 @@ export const createApiRouter = ({
     next();
   };
 
-  router.post("/generate", maybeHandleMultipart, async (request, response, next) => {
+  router.post("/generate", generateRateLimit, maybeHandleMultipart, async (request, response, next) => {
     const logoFile = pickFirstFile(request.files, "logo");
     const referenceImageFile = pickFirstFile(request.files, "referenceImage");
     const requestId = getRequestDebugId(request);

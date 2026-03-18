@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
+import { POSTER_API_URL } from './config'
 
-// API 端点配置：优先使用环境变量，回退到相对路径（Railway 生产环境）
-const API_ENDPOINT = import.meta.env.VITE_POSTER_API_URL || '/api/generate'
 const ONE_MB = 1024 * 1024
 const MIN_BASE64_IMAGE_LENGTH = 64
 const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/
@@ -313,7 +312,7 @@ function App() {
       if (logo) formData.append('logo', logo)
       if (referenceImage) formData.append('referenceImage', referenceImage)
 
-      const response = await fetch(API_ENDPOINT, {
+      const response = await fetch(POSTER_API_URL, {
         method: 'POST',
         body: formData,
       })

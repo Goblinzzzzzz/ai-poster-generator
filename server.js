@@ -56,6 +56,8 @@ const getStartupEnvDiagnostics = () => ({
   doubaoApiKeyCandidates: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
   doubaoModel: process.env.DOUBAO_MODEL || "(default)",
   doubaoApiEndpoint: process.env.DOUBAO_API_ENDPOINT || "(default)",
+  generateRateLimitWindowMs: process.env.GENERATE_RATE_LIMIT_WINDOW_MS || "60000",
+  generateRateLimitMaxRequests: process.env.GENERATE_RATE_LIMIT_MAX_REQUESTS || "5",
   corsOrigin: process.env.CORS_ORIGIN || "(allow-all)",
   railwayEnvironmentVariables: getEnvironmentVariableDiagnostics(
     Object.keys(process.env)
@@ -81,6 +83,8 @@ export const createApp = () => {
   const app = express();
   const routerApiKeyAtMount = getDoubaoApiKey();
 
+  app.set("trust proxy", true);
+
   console.log("[server.js] createApp started:", {
     startupEnvDiagnostics: getStartupEnvDiagnostics(),
   });
@@ -89,18 +93,6 @@ export const createApp = () => {
     uploadDir,
     apiKey: describeEnvValue(routerApiKeyAtMount),
   });
-
-  // Rate limiting: 限制每个 IP 的请求频率，防止滥用
-  const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 分钟窗口
-    max: 100, // 每个 IP 最多 100 次请求
-    message: { success: false, error: '请求过于频繁，请稍后再试。' },
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
-
-  // 对 API 端点应用限流
-  app.use('/api', limiter);
 
   app.use(
     cors({

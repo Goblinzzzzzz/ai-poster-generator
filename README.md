@@ -29,8 +29,11 @@ Copy `.env.example` to `.env` and set:
 - `DOUBAO_API_KEY`: Volcano Engine / Doubao API key
 - `DOUBAO_MODEL`: optional image model override, defaults to `doubao-seedream-4-0-250828`
 - `DOUBAO_API_ENDPOINT`: optional endpoint override, defaults to `https://ark.cn-beijing.volces.com/api/v3/images/generations`
+- `GENERATE_RATE_LIMIT_WINDOW_MS`: optional rate-limit window for `POST /api/generate`, defaults to `60000`
+- `GENERATE_RATE_LIMIT_MAX_REQUESTS`: optional per-IP request cap inside the window, defaults to `5`
 - `CORS_ORIGIN`: allowed frontend origin
 - `UPLOAD_DIR`: temporary upload storage directory
+- `VITE_POSTER_API_URL`: frontend backend endpoint, for local development use `http://localhost:3000/api/generate`
 
 ## API
 
@@ -61,7 +64,9 @@ Set backend variables in Railway exactly as named below. They are case-sensitive
 - `DOUBAO_API_KEY`
 - `DOUBAO_MODEL` (optional)
 - `DOUBAO_API_ENDPOINT` (optional)
+- `GENERATE_RATE_LIMIT_WINDOW_MS` (optional)
+- `GENERATE_RATE_LIMIT_MAX_REQUESTS` (optional)
 - `CORS_ORIGIN` (optional)
 - `UPLOAD_DIR` (optional)
 
-`VITE_POSTER_API_URL` is a frontend variable and does not replace `DOUBAO_API_KEY`.
+`VITE_POSTER_API_URL` must point to your app backend `/api/generate` endpoint. The frontend does not call Doubao directly and does not replace `DOUBAO_API_KEY`.
