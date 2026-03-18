@@ -3,7 +3,7 @@ import { readdir, stat, unlink } from "node:fs/promises";
 import { extname, join } from "node:path";
 
 import { generatePoster } from "../utils/doubao.js";
-import { DOUBAO_API_KEY_ENV_NAMES, describeEnvValue, getEnvironmentVariableDiagnostics, resolveDoubaoApiKey } from "../utils/env.js";
+import { describeEnvValue, normalizeEnvValue } from "../utils/env.js";
 import { buildPrompt } from "../utils/prompt-builder.js";
 
 const ONE_MB = 1024 * 1024;
@@ -173,19 +173,22 @@ export const createApiRouter = ({
   multer,
   uploadDir,
   apiKey,
-  getApiKey,
   generatePosterImpl = generatePoster,
 }) => {
   if (!Router || !multer) {
     throw new Error("createApiRouter 需要传入 Express Router 和 multer。");
   }
 
+  const normalizedApiKey = normalizeEnvValue(apiKey);
+
+  if (!normalizedApiKey) {
+    throw new Error("createApiRouter 需要传入 apiKey。");
+  }
+
   ensureUploadDir(uploadDir);
   logDebug("createApiRouter initialized:", {
     uploadDir,
-    explicitApiKey: describeEnvValue(apiKey),
-    envApiKeyAtInit: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
-    hasGetApiKeyResolver: typeof getApiKey === "function",
+    apiKey: describeEnvValue(normalizedApiKey),
   });
 
   const storage = multer.diskStorage({
@@ -245,28 +248,6 @@ export const createApiRouter = ({
     next();
   };
 
-  const resolveApiKeyForRequest = (request) => {
-    const requestId = getRequestDebugId(request);
-    const resolverValue =
-      typeof getApiKey === "function"
-        ? getApiKey(request)
-        : getApiKey;
-    const resolvedApiKey = resolveDoubaoApiKey({
-      explicitValue: apiKey,
-      resolverValue,
-    });
-
-    logDebug("resolved API key for request:", {
-      requestId,
-      fromGetApiKey: describeEnvValue(resolverValue),
-      fromExplicitApiKey: describeEnvValue(apiKey),
-      envCandidates: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
-      resolvedApiKey,
-    });
-
-    return resolvedApiKey.value;
-  };
-
   router.post("/generate", maybeHandleMultipart, async (request, response, next) => {
     const logoFile = pickFirstFile(request.files, "logo");
     const referenceImageFile = pickFirstFile(request.files, "referenceImage");
@@ -290,38 +271,25 @@ export const createApiRouter = ({
         referenceImageUrl,
       });
       const promptResult = buildPrompt(normalizedPayload);
-      const resolvedApiKey = resolveApiKeyForRequest(request);
 
       logDebug("prepared prompt and payload for generation:", {
         requestId,
         normalizedPayload,
         promptLength: promptResult.prompt.length,
         negativePromptLength: promptResult.negativePrompt.length,
-        apiKey: describeEnvValue(resolvedApiKey),
+        apiKey: describeEnvValue(normalizedApiKey),
       });
-
-      if (!resolvedApiKey) {
-        logDebug("missing API key before calling generatePoster:", {
-          requestId,
-          processEnvApiKeyCandidates: getEnvironmentVariableDiagnostics(DOUBAO_API_KEY_ENV_NAMES),
-        });
-        throw createApiError(
-          503,
-          "DOUBAO_NOT_CONFIGURED",
-          "Doubao 图片生成服务未配置，请先设置 DOUBAO_API_KEY。",
-        );
-      }
 
       logDebug("calling generatePosterImpl:", {
         requestId,
-        apiKey: describeEnvValue(resolvedApiKey),
+        apiKey: describeEnvValue(normalizedApiKey),
         referenceImages: [referenceImageUrl, logoUrl].filter(Boolean),
       });
       const generationResult = await generatePosterImpl({
         prompt: promptResult.prompt,
         negativePrompt: promptResult.negativePrompt,
         sizeTemplate: normalizedPayload.sizeTemplate,
-        apiKey: resolvedApiKey,
+        apiKey: normalizedApiKey,
         referenceImages: [referenceImageUrl, logoUrl].filter(Boolean),
         requestId,
       });

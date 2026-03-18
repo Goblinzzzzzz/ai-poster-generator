@@ -36,14 +36,8 @@ export const describeEnvValue = (value) => {
 export const getEnvironmentVariableDiagnostics = (variableNames, env = process.env) =>
   Object.fromEntries(variableNames.map((variableName) => [variableName, describeEnvValue(env[variableName])]));
 
-export const resolveDoubaoApiKey = ({ env = process.env, explicitValue, resolverValue } = {}) => {
+export const resolveDoubaoApiKey = ({ env = process.env, explicitValue } = {}) => {
   const resolutionChain = [
-    {
-      source: "getApiKey()",
-      variableName: null,
-      value: resolverValue,
-      details: describeEnvValue(resolverValue),
-    },
     {
       source: "createApiRouter apiKey option",
       variableName: null,

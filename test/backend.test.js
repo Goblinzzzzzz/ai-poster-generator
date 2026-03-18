@@ -203,7 +203,7 @@ test("createApiRouter requires an explicit apiKey", () => {
   const uploadDir = mkdtempSync(join(tmpdir(), "ai-poster-generator-test-"));
 
   const Router = () => ({
-    post(path, ...handlers) {
+    post() {
       return this;
     },
   });
@@ -369,13 +369,14 @@ test("debug endpoint returns complete environment diagnostics", async () => {
   const previousDoubaoKey = process.env.DOUBAO_KEY;
   const previousGenericApiKey = process.env.API_KEY;
   const previousEndpoint = process.env.DOUBAO_API_ENDPOINT;
-  const app = createApp();
+  let app;
 
   try {
     delete process.env.DOUBAO_API_KEY;
     process.env.DOUBAO_KEY = "railway-debug-key";
     delete process.env.API_KEY;
     process.env.DOUBAO_API_ENDPOINT = "https://example.com/debug-doubao";
+    app = createApp();
 
     const debugLayer = app._router.stack.find((layer) => layer.route?.path === "/api/debug-env");
     assert.ok(debugLayer);
