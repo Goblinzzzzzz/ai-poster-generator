@@ -1,0 +1,131 @@
+.timeline-feed {
+  padding: 26px 4px 170px;
+}
+
+.timeline-feed-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.timeline-kicker {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: var(--accent-strong);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.timeline-feed-header h2 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: clamp(1.4rem, 1vw + 1rem, 1.95rem);
+  letter-spacing: -0.02em;
+}
+
+.timeline-feed-header p {
+  max-width: 440px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.94rem;
+  line-height: 1.7;
+}
+
+.timeline-group + .timeline-group {
+  margin-top: 28px;
+}
+
+.timeline-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.timeline-group-header h3 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 1.05rem;
+}
+
+.timeline-group-header span {
+  color: var(--text-soft);
+  font-size: 0.84rem;
+}
+
+.timeline-grid {
+  column-count: 3;
+  column-gap: 20px;
+}
+
+.timeline-load-more,
+.timeline-end {
+  display: grid;
+  place-items: center;
+  margin-top: 24px;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.timeline-feed-empty {
+  display: grid;
+  min-height: 52vh;
+  place-items: center;
+}
+
+.timeline-empty-card {
+  width: min(420px, 100%);
+  padding: 32px;
+  border: 1px solid var(--border-soft);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--card-shadow-lg);
+  text-align: center;
+}
+
+.timeline-empty-card h2 {
+  margin: 16px 0 10px;
+  color: var(--text-main);
+  font-size: 1.28rem;
+}
+
+.timeline-empty-card p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.timeline-empty-badge {
+  display: inline-flex;
+  padding: 0.44rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--accent-strong);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+@media (max-width: 1280px) {
+  .timeline-grid {
+    column-count: 2;
+  }
+}
+
+@media (max-width: 860px) {
+  .timeline-feed {
+    padding: 20px 0 170px;
+  }
+
+  .timeline-feed-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .timeline-grid {
+    column-count: 1;
+  }
+}
