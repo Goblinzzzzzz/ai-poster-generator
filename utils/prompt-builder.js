@@ -1,3 +1,5 @@
+import { filterSensitivePayload, normalizeInputText } from "./sensitive-filter.js";
+
 // 海报类型标签（仅用于内部标识，不写入 prompt）
 const POSTER_TYPE_LABELS = {
   training: "培训",
@@ -25,24 +27,22 @@ const LOGO_POSITIONS = {
   bottom_right: "右下角",
 };
 
-const sanitizeText = (value, maxLength = 1000) =>
-  String(value || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, maxLength);
+export const normalizePromptInput = (input = {}) => {
+  const normalized = {
+    posterType: normalizeInputText(input.posterType, 40) || "training",
+    sizeTemplate: normalizeInputText(input.sizeTemplate, 40) || "mobile",
+    title: normalizeInputText(input.title, 50),
+    subtitle: normalizeInputText(input.subtitle, 200),
+    styleDesc: normalizeInputText(input.styleDesc, 120) || "简约现代",
+    customPrompt: normalizeInputText(input.customPrompt, 1000),
+    negativePrompt: normalizeInputText(input.negativePrompt, 300),
+    logoPosition: normalizeInputText(input.logoPosition, 40) || "auto",
+    logoUrl: normalizeInputText(input.logoUrl, 2048),
+    referenceImageUrl: normalizeInputText(input.referenceImageUrl, 2048),
+  };
 
-export const normalizePromptInput = (input = {}) => ({
-  posterType: sanitizeText(input.posterType, 40) || "training",
-  sizeTemplate: sanitizeText(input.sizeTemplate, 40) || "mobile",
-  title: sanitizeText(input.title, 50),
-  subtitle: sanitizeText(input.subtitle, 200),
-  styleDesc: sanitizeText(input.styleDesc, 120) || "简约现代",
-  customPrompt: String(input.customPrompt || "").trim().slice(0, 1000),
-  negativePrompt: sanitizeText(input.negativePrompt, 300),
-  logoPosition: sanitizeText(input.logoPosition, 40) || "auto",
-  logoUrl: sanitizeText(input.logoUrl, 2048),
-  referenceImageUrl: sanitizeText(input.referenceImageUrl, 2048),
-});
+  return filterSensitivePayload(normalized).sanitized;
+};
 
 export const buildPrompt = (rawInput = {}) => {
   const input = normalizePromptInput(rawInput);
@@ -52,70 +52,29 @@ export const buildPrompt = (rawInput = {}) => {
   const hasLogoAsset = Boolean(input.logoUrl);
   const hasReferenceAsset = Boolean(input.referenceImageUrl);
 
-  // 通用约束：避免图片中出现文字
-  const universalConstraints = [
-    "重要：图片中不要显示任何文字、数字、尺寸信息、版本号等文本内容",
-    "所有文字信息（标题、副标题等）将在后期添加，图片只需要视觉设计",
-    "不要显示尺寸标注（如 1080×1920）、不要显示'手机版'等说明文字",
-    "保持画面干净，专注于视觉元素、色彩、构图和氛围",
-  ];
-
-  // 构建核心视觉描述
-  const visualPrompt = [
-    `设计一张${posterTypeLabel}风格的视觉画面：`,
-    `- 整体风格：${input.styleDesc}`,
-    `- 配色方案：专业、协调、有视觉冲击力`,
-    `- 构图要求：版式清晰、层次分明、留白合理`,
-    `- 适用场景：${sizeTemplate}，但不要在画面中显示尺寸信息`,
-  ];
-
-  // 添加素材相关说明
-  if (hasLogoAsset) {
-    visualPrompt.push(`- Logo 处理：已上传 Logo，请在${logoPositionLabel}预留合适位置，保持品牌识别感`);
-  } else {
-    visualPrompt.push("- Logo 处理：无 Logo，画面保持完整，无需预留特定位置");
-  }
-
-  if (hasReferenceAsset) {
-    visualPrompt.push("- 参考图：已上传参考图，请参考其整体配色、构图或质感，但不要直接复制");
-  }
-
-  // 标题和副标题仅作为设计参考，不要求显示在图片中
-  if (input.title) {
-    visualPrompt.push(`- 设计主题：${input.title}${input.subtitle ? ` - ${input.subtitle}` : ""}`);
-    visualPrompt.push("  注意：标题文字将在后期添加，图片中不要显示这些文字");
-  }
-
-  // 输出要求
-  const outputRequirements = [
-    "高质量、专业设计",
-    `符合${posterTypeLabel}海报的视觉特点`,
-    "色彩协调、版式清晰",
-    "适合后期添加中文排版",
-    "不要包含任何可见文字、数字或符号",
-  ];
+  const themeSentence = input.title ? `主题参考：${input.title}${input.subtitle ? `，${input.subtitle}` : ""}。` : "";
+  const logoSentence = hasLogoAsset
+    ? `已上传 Logo，请在${logoPositionLabel}自然预留品牌位置。`
+    : "未提供 Logo，画面保持完整即可。";
+  const referenceSentence = hasReferenceAsset
+    ? "已上传参考图，可参考其配色、构图和材质氛围，但不要直接复制。"
+    : "";
+  const sharedConstraints =
+    "画面保持专业、干净、层次清晰，适合商业传播，并为后期中文排版预留空间。图片中不要出现任何文字、数字、水印、签名或尺寸标注。";
 
   if (input.customPrompt) {
-    // 用户使用自定义 prompt 时，追加约束条件
     const customPromptSections = [
       input.customPrompt,
-      "",
-      "=== 重要约束（必须遵守）===",
-      ...universalConstraints,
-      "",
-      "=== 设计参考信息 ===",
-      ...visualPrompt,
-      "",
-      "=== 输出要求 ===",
-      ...outputRequirements.map((item) => `- ${item}`),
-    ];
-
-    if (input.negativePrompt) {
-      customPromptSections.push("", `=== 负面要求 ===\n${input.negativePrompt}`);
-    }
+      `请输出适用于${sizeTemplate}的${posterTypeLabel}视觉海报。`,
+      `整体风格保持${input.styleDesc}。`,
+      themeSentence,
+      logoSentence,
+      referenceSentence,
+      sharedConstraints,
+    ].filter(Boolean);
 
     return {
-      prompt: customPromptSections.join("\n"),
+      prompt: customPromptSections.join(" "),
       negativePrompt: input.negativePrompt,
       usedCustomPrompt: true,
       metadata: {
@@ -126,20 +85,17 @@ export const buildPrompt = (rawInput = {}) => {
     };
   }
 
-  // 默认模板模式
   const promptSections = [
-    "=== 设计任务 ===",
-    ...visualPrompt,
-    "",
-    "=== 重要约束（必须遵守）===",
-    ...universalConstraints,
-    "",
-    "=== 输出要求 ===",
-    ...outputRequirements.map((item) => `- ${item}`),
-  ];
+    `请设计一张适用于${sizeTemplate}的${posterTypeLabel}视觉海报。`,
+    themeSentence,
+    `整体风格：${input.styleDesc}。`,
+    "配色保持专业协调，主体明确，构图清晰，留白自然。",
+    logoSentence,
+    referenceSentence,
+    sharedConstraints,
+  ].filter(Boolean);
 
-  // 添加负面提示词
-  const defaultNegativePrompt = "文字、数字、水印、签名、尺寸标注、模糊、低质量、变形、杂乱";
+  const defaultNegativePrompt = "文字、数字、水印、签名、尺寸标注、低清晰度、模糊、杂乱、错误结构";
   const combinedNegativePrompt = input.negativePrompt
     ? `${defaultNegativePrompt}, ${input.negativePrompt}`
     : defaultNegativePrompt;

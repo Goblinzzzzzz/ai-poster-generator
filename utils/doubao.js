@@ -6,6 +6,7 @@ import {
   normalizeEnvValue,
   resolveDoubaoApiKey,
 } from "./env.js";
+import { isDoubaoSensitiveError } from "./sensitive-filter.js";
 
 // 默认端点和模型仅作为 fallback，优先使用环境变量
 const DEFAULT_ENDPOINT = process.env.DOUBAO_API_ENDPOINT || "https://ark.cn-beijing.volces.com/api/v3/images/generations";
@@ -305,6 +306,10 @@ const extractUpstreamErrorMessage = ({ payload, rawText, status }) => {
   ];
   const message = messageCandidates.find((value) => typeof value === "string" && value.trim());
   const normalizedMessage = message ? message.trim() : "无响应内容";
+
+  if (isDoubaoSensitiveError(normalizedMessage)) {
+    return `Doubao API 请求失败（${status}）：当前描述触发内容安全拦截，请删减政治、暴力、成人或违法相关词语，改用品牌、主体、材质、光线、配色等中性视觉描述。`;
+  }
 
   return `Doubao API 请求失败（${status}）：${normalizedMessage}`;
 };

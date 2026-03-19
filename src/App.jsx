@@ -8,7 +8,7 @@ import PromptInput from './components/PromptInput'
 import { POSTER_API_URL } from './config'
 
 const DEFAULT_NEGATIVE_PROMPT =
-  '文字、数字、水印、签名、尺寸标注、日期、时间、版本号、模糊、低质量、变形、杂乱、过曝、欠曝、噪点、畸形、多余手指、错误解剖、重复元素、低分辨率、压缩痕迹、色带、锯齿边缘'
+  '文字、数字、水印、签名、尺寸标注、模糊、低清晰度、杂乱、过曝、欠曝、噪点、重复元素、压缩痕迹、锯齿边缘'
 const MIN_BASE64_IMAGE_LENGTH = 64
 const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/
 

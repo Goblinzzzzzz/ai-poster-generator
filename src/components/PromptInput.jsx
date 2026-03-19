@@ -47,7 +47,7 @@ export default function PromptInput({
         <textarea
           id="jimeng-prompt-input"
           className="prompt-textarea"
-          placeholder="Seedance 2.0 全能参考，上传参考、输入文字，创意无限可能"
+          placeholder="描述主体、材质、光线、配色和构图，例如：高端护肤产品，玻璃器皿，柔和晨光，冷白配色，极简留白。"
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
@@ -58,6 +58,7 @@ export default function PromptInput({
           <div className="prompt-status">
             <span>{value.trim().length} 字</span>
             <span>Ctrl / Command + Enter 快速生成</span>
+            <span>建议避免政治、暴力、成人或违法相关词语</span>
             {error ? (
               <span className="prompt-error" role="alert">
                 {error}

@@ -22,27 +22,30 @@ test("buildPrompt creates the default structured prompt", () => {
   });
 
   assert.equal(result.usedCustomPrompt, false);
-  assert.match(result.prompt, /请生成一张节日海报/);
+  assert.match(result.prompt, /请设计一张适用于正方形海报的节日视觉海报/);
   assert.match(result.prompt, /周年庆典/);
-  assert.match(result.prompt, /不要人物/);
-  assert.match(result.prompt, /包含 Logo：是/);
+  assert.match(result.prompt, /欢迎全员参加/);
+  assert.match(result.prompt, /已上传 Logo/);
   assert.match(result.prompt, /已上传参考图/);
-  assert.equal(result.metadata.sizeLabel, "1000×1000（微博海报）");
+  assert.match(result.negativePrompt, /不要人物/);
+  assert.equal(result.metadata.sizeTemplate, "正方形海报");
 });
 
-test("buildPrompt preserves custom prompt and appends constraints", () => {
+test("buildPrompt rewrites risky words in custom prompt and keeps a compact structure", () => {
   const result = buildPrompt({
     title: "内部通知",
-    customPrompt: "使用扁平化设计，蓝绿色为主色调。",
+    customPrompt: "使用性感爆炸风格，蓝绿色为主色调。",
     negativePrompt: "不要复杂背景",
     logoPosition: "top_left",
+    logoUrl: "https://cdn.example.com/logo.png",
   });
 
   assert.equal(result.usedCustomPrompt, true);
-  assert.match(result.prompt, /^使用扁平化设计/);
-  assert.match(result.prompt, /补充约束：/);
+  assert.match(result.prompt, /^使用时尚强烈张力风格/);
+  assert.doesNotMatch(result.prompt, /性感|爆炸/);
+  assert.match(result.prompt, /请输出适用于竖版手机海报的培训视觉海报/);
   assert.match(result.prompt, /左上角/);
-  assert.match(result.prompt, /不要复杂背景/);
+  assert.equal(result.negativePrompt, "不要复杂背景");
 });
 
 test("validateGeneratePayload rejects missing title", () => {
@@ -68,6 +71,21 @@ test("validateGeneratePayload rejects unsupported enum values", () => {
       error.statusCode === 400 &&
       error.code === "VALIDATION_ERROR" &&
       /sizeTemplate 无效/.test(error.message),
+  );
+});
+
+test("validateGeneratePayload rejects blocked sensitive prompt content", () => {
+  assert.throws(
+    () =>
+      validateGeneratePayload({
+        title: "敏感内容测试",
+        customPrompt: "选举海报，国家领导人肖像，正式宣传风格。",
+      }),
+    (error) =>
+      error instanceof ApiError &&
+      error.statusCode === 400 &&
+      error.code === "SENSITIVE_PROMPT" &&
+      /Doubao 容易拦截/.test(error.message),
   );
 });
 
@@ -231,6 +249,31 @@ test("generatePoster retries and extracts a data url from b64_json", async () =>
   assert.equal(attempts, 3);
   assert.equal(result.provider, "doubao-seed");
   assert.match(result.imageUrl, /^data:image\/png;base64,/);
+});
+
+test("generatePoster returns a friendly error for upstream sensitive blocks", async () => {
+  await assert.rejects(
+    () =>
+      generatePoster({
+        prompt: "生成品牌海报",
+        apiKey: "test-key",
+        maxRetries: 1,
+        sleepImpl: async () => {},
+        fetchImpl: async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                message: "The request failed because the input text may contain sensitive information.",
+              },
+            }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+      }),
+    /内容安全拦截/,
+  );
 });
 
 test("generatePoster normalizes direct base64 image responses", async () => {
@@ -562,6 +605,80 @@ test("createApiRouter passes an empty referenceImages array when logo and refere
     assert.deepEqual(receivedReferenceImages, []);
     assert.equal(response.statusCode, 200);
     assert.equal(response.payload?.success, true);
+  } finally {
+    rmSync(uploadDir, { recursive: true, force: true });
+  }
+});
+
+test("createApiRouter maps upstream sensitive errors to a friendly 400 response", async () => {
+  const uploadDir = mkdtempSync(join(tmpdir(), "ai-poster-generator-test-"));
+  const routes = new Map();
+
+  const Router = () => ({
+    post(path, ...handlers) {
+      routes.set(path, handlers);
+      return this;
+    },
+  });
+  const multerStub = Object.assign(
+    () => ({
+      fields: () => (_request, _response, next) => next(),
+    }),
+    {
+      diskStorage: () => ({}),
+    },
+  );
+
+  try {
+    createApiRouter({
+      Router,
+      multer: multerStub,
+      uploadDir,
+      apiKey: "explicit-router-key",
+      generatePosterImpl: async () => {
+        throw new Error("Doubao API 请求失败（400）：当前描述触发内容安全拦截，请调整后重试。");
+      },
+    });
+
+    const [, , handleGenerate] = routes.get("/generate");
+    const request = {
+      posterRequestId: "req-sensitive-upstream",
+      is: () => false,
+      files: {},
+      body: {
+        title: "友好提示测试",
+      },
+      protocol: "https",
+      get(headerName) {
+        if (headerName === "host") {
+          return "poster.example.com";
+        }
+
+        return undefined;
+      },
+    };
+    const response = {
+      statusCode: 200,
+      payload: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.payload = payload;
+        return this;
+      },
+    };
+
+    let forwardedError;
+    await handleGenerate(request, response, (error) => {
+      forwardedError = error;
+    });
+
+    assert.ok(forwardedError instanceof ApiError);
+    assert.equal(forwardedError.statusCode, 400);
+    assert.equal(forwardedError.code, "SENSITIVE_PROMPT");
+    assert.match(forwardedError.message, /政治、暴力、成人或违法相关词语/);
   } finally {
     rmSync(uploadDir, { recursive: true, force: true });
   }

@@ -5,6 +5,12 @@ import { extname, join } from "node:path";
 import { generatePoster } from "../utils/doubao.js";
 import { describeEnvValue, normalizeEnvValue } from "../utils/env.js";
 import { buildPrompt } from "../utils/prompt-builder.js";
+import {
+  createSensitivePromptMessage,
+  filterSensitivePayload,
+  isDoubaoSensitiveError,
+  normalizeInputText,
+} from "../utils/sensitive-filter.js";
 
 const ONE_MB = 1024 * 1024;
 const STALE_UPLOAD_MS = 24 * 60 * 60 * 1000;
@@ -37,12 +43,6 @@ const ALLOWED_GENERATE_FIELDS = new Set([
 const HTTP_URL_PROTOCOLS = new Set(["http:", "https:"]);
 const DEBUG_SCOPE = "[api/generate.js]";
 
-const sanitizeText = (value, maxLength = 1000) =>
-  String(value || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, maxLength);
-
 const getRequestDebugId = (request) => String(request?.posterRequestId || "no-request-id");
 
 const isPlainObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -54,7 +54,7 @@ const getClientAddress = (request) => {
     return forwardedFor.split(",")[0].trim().slice(0, 128);
   }
 
-  return sanitizeText(request.ip || request.socket?.remoteAddress || request.connection?.remoteAddress, 128) || "unknown";
+  return normalizeInputText(request.ip || request.socket?.remoteAddress || request.connection?.remoteAddress, 128) || "unknown";
 };
 
 const parsePositiveInteger = (value, fallbackValue, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
@@ -193,39 +193,50 @@ export const validateGeneratePayload = (payload = {}) => {
   }
 
   const normalized = {
-    posterType: sanitizeText(payload.posterType, 40) || "training",
-    sizeTemplate: sanitizeText(payload.sizeTemplate, 40) || "mobile",
-    title: sanitizeText(payload.title, 50),
-    subtitle: sanitizeText(payload.subtitle, 200),
-    styleDesc: sanitizeText(payload.styleDesc, 120),
-    customPrompt: String(payload.customPrompt || "").trim().slice(0, 1000),
-    negativePrompt: sanitizeText(payload.negativePrompt, 300),
-    logoPosition: sanitizeText(payload.logoPosition, 40) || "auto",
-    logoUrl: sanitizeText(payload.logoUrl, 2048),
-    referenceImageUrl: sanitizeText(payload.referenceImageUrl, 2048),
+    posterType: normalizeInputText(payload.posterType, 40) || "training",
+    sizeTemplate: normalizeInputText(payload.sizeTemplate, 40) || "mobile",
+    title: normalizeInputText(payload.title, 50),
+    subtitle: normalizeInputText(payload.subtitle, 200),
+    styleDesc: normalizeInputText(payload.styleDesc, 120),
+    customPrompt: normalizeInputText(payload.customPrompt, 1000),
+    negativePrompt: normalizeInputText(payload.negativePrompt, 300),
+    logoPosition: normalizeInputText(payload.logoPosition, 40) || "auto",
+    logoUrl: normalizeInputText(payload.logoUrl, 2048),
+    referenceImageUrl: normalizeInputText(payload.referenceImageUrl, 2048),
   };
 
-  if (!normalized.title) {
+  const sensitiveResult = filterSensitivePayload(normalized, { strict: true });
+
+  if (sensitiveResult.blocked.length > 0) {
+    throw createApiError(400, "SENSITIVE_PROMPT", createSensitivePromptMessage(sensitiveResult.blocked), {
+      fields: Array.from(new Set(sensitiveResult.blocked.map((item) => item.field))),
+      categories: Array.from(new Set(sensitiveResult.blocked.map((item) => item.category))),
+    });
+  }
+
+  const filteredPayload = sensitiveResult.sanitized;
+
+  if (!filteredPayload.title) {
     throw createApiError(400, "VALIDATION_ERROR", "标题不能为空。", {
       field: "title",
     });
   }
 
-  if (!ALLOWED_POSTER_TYPES.has(normalized.posterType)) {
+  if (!ALLOWED_POSTER_TYPES.has(filteredPayload.posterType)) {
     throw createApiError(400, "VALIDATION_ERROR", "posterType 无效。", {
       field: "posterType",
       allowedValues: Array.from(ALLOWED_POSTER_TYPES),
     });
   }
 
-  if (!ALLOWED_SIZE_TEMPLATES.has(normalized.sizeTemplate)) {
+  if (!ALLOWED_SIZE_TEMPLATES.has(filteredPayload.sizeTemplate)) {
     throw createApiError(400, "VALIDATION_ERROR", "sizeTemplate 无效。", {
       field: "sizeTemplate",
       allowedValues: Array.from(ALLOWED_SIZE_TEMPLATES),
     });
   }
 
-  if (!ALLOWED_LOGO_POSITIONS.has(normalized.logoPosition)) {
+  if (!ALLOWED_LOGO_POSITIONS.has(filteredPayload.logoPosition)) {
     throw createApiError(400, "VALIDATION_ERROR", "logoPosition 无效。", {
       field: "logoPosition",
       allowedValues: Array.from(ALLOWED_LOGO_POSITIONS),
@@ -233,7 +244,7 @@ export const validateGeneratePayload = (payload = {}) => {
   }
 
   for (const fieldName of ["logoUrl", "referenceImageUrl"]) {
-    const fieldValue = normalized[fieldName];
+    const fieldValue = filteredPayload[fieldName];
 
     if (!fieldValue) {
       continue;
@@ -257,7 +268,7 @@ export const validateGeneratePayload = (payload = {}) => {
     }
   }
 
-  return normalized;
+  return filteredPayload;
 };
 
 const createGenerateRateLimitMiddleware = ({ windowMs, maxRequests, nowImpl = Date.now } = {}) => {
@@ -323,10 +334,10 @@ const getForwardedHeaderValue = (request, headerName) => {
 };
 
 const getPublicRequestProtocol = (request) =>
-  getForwardedHeaderValue(request, "x-forwarded-proto") || sanitizeText(request.protocol, 20) || "http";
+  getForwardedHeaderValue(request, "x-forwarded-proto") || normalizeInputText(request.protocol, 20) || "http";
 
 const getPublicRequestHost = (request) =>
-  getForwardedHeaderValue(request, "x-forwarded-host") || sanitizeText(request.get?.("host"), 255);
+  getForwardedHeaderValue(request, "x-forwarded-host") || normalizeInputText(request.get?.("host"), 255);
 
 const buildPublicFileUrl = (request, file) => {
   const encodedName = encodeURIComponent(file.filename);
@@ -347,7 +358,7 @@ const pickFirstFile = (files, fieldName) => {
 };
 
 const normalizeUploadKind = (requestBody = {}, files = {}) => {
-  const explicitKind = sanitizeText(requestBody.kind, 40);
+  const explicitKind = normalizeInputText(requestBody.kind, 40);
 
   if (explicitKind === "logo" || explicitKind === "referenceImage") {
     return explicitKind;
@@ -589,6 +600,17 @@ export const createApiRouter = ({
         typeof error?.message === "string" && error.message.trim()
           ? error.message.trim()
           : "Doubao 图片生成失败，请稍后重试。";
+
+      if (isDoubaoSensitiveError(message)) {
+        next(
+          createApiError(
+            400,
+            "SENSITIVE_PROMPT",
+            "当前描述仍触发了 Doubao 的内容安全拦截，请删减政治、暴力、成人或违法相关词语，改写为品牌、主体、材质、光线、配色等中性视觉描述后重试。",
+          ),
+        );
+        return;
+      }
 
       next(
         createApiError(

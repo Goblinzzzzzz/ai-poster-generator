@@ -35,6 +35,13 @@ const SOFT_REWRITE_RULES = [
 
 const DOUBAO_SENSITIVE_ERROR_PATTERN =
   /(sensitive information|sensitive content|敏感信息|内容安全|安全策略|input text may contain sensitive)/iu;
+const FIELD_MAX_LENGTHS = {
+  title: 50,
+  subtitle: 200,
+  styleDesc: 120,
+  customPrompt: 1000,
+  negativePrompt: 300,
+};
 
 export const normalizeInputText = (value, maxLength = 1000) =>
   String(value || "")
@@ -121,7 +128,7 @@ export const filterSensitivePayload = (payload = {}, { strict = false } = {}) =>
 
   for (const fieldName of fields) {
     const result = filterSensitiveText(payload[fieldName], {
-      maxLength: fieldName === "customPrompt" ? 1000 : fieldName === "subtitle" ? 200 : fieldName === "styleDesc" ? 120 : 300,
+      maxLength: FIELD_MAX_LENGTHS[fieldName] || 300,
       strict,
     });
 
