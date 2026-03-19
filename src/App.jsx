@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
+import Lightbox from './components/Lightbox'
 import MobileNav from './components/MobileNav'
 import Sidebar from './components/Sidebar'
 import TimelineFeed from './components/TimelineFeed'
 import TopBar from './components/TopBar'
 import PromptInput from './components/PromptInput'
 import { POSTER_API_URL } from './config'
+import { downloadWorkImage, shareWork } from './utils/download'
 
 const DEFAULT_NEGATIVE_PROMPT =
   '文字、数字、水印、签名、尺寸标注、模糊、低清晰度、杂乱、过曝、欠曝、噪点、重复元素、压缩痕迹、锯齿边缘'
@@ -42,9 +44,7 @@ const QUICK_ACTIONS = [
   { id: 'design', label: '创意设计' },
 ]
 
-const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) =>
-  ['inspiration', 'generate', 'assets'].includes(item.id),
-)
+const MOBILE_NAV_ITEMS = NAV_ITEMS
 
 const TIME_FILTER_OPTIONS = [
   { value: 'all', label: '全部时间' },
@@ -65,6 +65,13 @@ const ACTION_FILTER_OPTIONS = [
   { value: '编辑', label: '编辑' },
   { value: '延展', label: '延展' },
 ]
+
+const TIME_BUCKET_DAY_OFFSETS = {
+  today: 0,
+  yesterday: -1,
+  week: -7,
+  month: -30,
+}
 
 const SEED_WORKS = [
   {
@@ -421,10 +428,50 @@ const createGeneratedWork = (prompt, imageSrc, quickAction) => {
     headline: buildTitleFromPrompt(prompt) || '即时创作',
     tone: `${quickAction.label} · 最新生成`,
     imageSrc,
+    sortTimestamp: now.getTime(),
     surface:
       'linear-gradient(160deg, #f8fbff 0%, #ebf2ff 48%, #d9e7ff 100%)',
     aspectRatio: '4 / 5',
   }
+}
+
+const resolveWorkTimestamp = (work) => {
+  if (typeof work.sortTimestamp === 'number') {
+    return work.sortTimestamp
+  }
+
+  const now = new Date()
+  const baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const absoluteDateMatch = String(work.dateLabel || '').match(
+    /^(\d{4})年(\d{1,2})月(\d{1,2})日$/,
+  )
+
+  if (absoluteDateMatch) {
+    const [, year, month, day] = absoluteDateMatch
+    baseDate.setFullYear(Number(year), Number(month) - 1, Number(day))
+  } else if (work.dateLabel === '昨天') {
+    baseDate.setDate(baseDate.getDate() - 1)
+  } else if (work.dateLabel !== '今天') {
+    const offset = TIME_BUCKET_DAY_OFFSETS[work.timeBucket] ?? -365
+    baseDate.setDate(baseDate.getDate() + offset)
+  }
+
+  const timeMatch = String(work.createdAt || '').match(/^(\d{1,2}):(\d{2})$/)
+  const hours = timeMatch ? Number(timeMatch[1]) : 0
+  const minutes = timeMatch ? Number(timeMatch[2]) : 0
+
+  baseDate.setHours(hours, minutes, 0, 0)
+  return baseDate.getTime()
+}
+
+const compareWorksByTime = (left, right) => {
+  const difference = resolveWorkTimestamp(left) - resolveWorkTimestamp(right)
+
+  if (difference !== 0) {
+    return difference
+  }
+
+  return left.id.localeCompare(right.id)
 }
 
 function App() {
@@ -439,6 +486,8 @@ function App() {
   const [actionFilter, setActionFilter] = useState('all')
   const [activeQuickAction, setActiveQuickAction] = useState(QUICK_ACTIONS[0].id)
   const [generatedWorks, setGeneratedWorks] = useState([])
+  const [hiddenWorkIds, setHiddenWorkIds] = useState([])
+  const [lightboxWorkId, setLightboxWorkId] = useState(null)
 
   const activeQuickActionConfig =
     QUICK_ACTIONS.find((action) => action.id === activeQuickAction) || QUICK_ACTIONS[0]
@@ -480,28 +529,64 @@ function App() {
     }
   }, [])
 
-  const works = [...generatedWorks, ...SEED_WORKS].filter((work) => {
-    if (work.view !== selectedView) {
-      return false
+  const allWorks = useMemo(
+    () =>
+      [...SEED_WORKS, ...generatedWorks]
+        .filter((work) => !hiddenWorkIds.includes(work.id))
+        .sort(compareWorksByTime),
+    [generatedWorks, hiddenWorkIds],
+  )
+
+  const works = useMemo(
+    () =>
+      allWorks.filter((work) => {
+        if (work.view !== selectedView) {
+          return false
+        }
+
+        if (!matchesTimeFilter(work, timeFilter)) {
+          return false
+        }
+
+        if (mediaFilter !== 'all' && work.mediaType !== mediaFilter) {
+          return false
+        }
+
+        if (actionFilter !== 'all' && work.actionType !== actionFilter) {
+          return false
+        }
+
+        return matchesSearch(work, searchValue)
+      }),
+    [actionFilter, allWorks, mediaFilter, searchValue, selectedView, timeFilter],
+  )
+
+  const lightboxItems = useMemo(
+    () => works.filter((work) => work.mediaKind === 'image'),
+    [works],
+  )
+
+  const activeLightboxIndex = lightboxItems.findIndex((work) => work.id === lightboxWorkId)
+
+  useEffect(() => {
+    if (lightboxWorkId && activeLightboxIndex === -1) {
+      setLightboxWorkId(null)
     }
+  }, [activeLightboxIndex, lightboxWorkId])
 
-    if (!matchesTimeFilter(work, timeFilter)) {
-      return false
-    }
+  const focusPromptInput = () => {
+    window.requestAnimationFrame(() => {
+      const promptInput = document.getElementById('jimeng-prompt-input')
+      promptInput?.focus()
+      promptInput?.scrollIntoView({
+        block: 'nearest',
+        behavior: 'smooth',
+      })
+    })
+  }
 
-    if (mediaFilter !== 'all' && work.mediaType !== mediaFilter) {
-      return false
-    }
-
-    if (actionFilter !== 'all' && work.actionType !== actionFilter) {
-      return false
-    }
-
-    return matchesSearch(work, searchValue)
-  })
-
-  const handleGenerate = async () => {
-    const trimmedPrompt = prompt.trim()
+  const handleGenerate = async (promptOverride) => {
+    const trimmedPrompt = String(promptOverride ?? prompt).trim()
 
     if (!trimmedPrompt) {
       setError('请输入创作描述。')
@@ -555,8 +640,8 @@ function App() {
       setSelectedView('generate')
       setTimeFilter('today')
       setGeneratedWorks((current) => [
-        createGeneratedWork(trimmedPrompt, nextImage, activeQuickActionConfig),
         ...current,
+        createGeneratedWork(trimmedPrompt, nextImage, activeQuickActionConfig),
       ])
       setPrompt('')
     } catch (requestError) {
@@ -569,6 +654,52 @@ function App() {
   const handleViewSelect = (viewId) => {
     setSelectedView(viewId)
     setIsNavDrawerOpen(false)
+  }
+
+  const handleWorkOpen = (workId) => {
+    setLightboxWorkId(workId)
+  }
+
+  const handleLightboxNavigate = (nextIndex) => {
+    setLightboxWorkId(lightboxItems[nextIndex]?.id || null)
+  }
+
+  const handleWorkDownload = async (work) => {
+    try {
+      await downloadWorkImage(work)
+    } catch (downloadError) {
+      setError(normalizeMessage(downloadError?.message) || '下载失败，请稍后重试。')
+    }
+  }
+
+  const handleWorkEdit = (work) => {
+    setSelectedView('generate')
+    setPrompt(work.prompt || '')
+    setError('')
+    focusPromptInput()
+  }
+
+  const handleWorkRegenerate = async (work) => {
+    handleWorkEdit(work)
+    await handleGenerate(work.prompt)
+  }
+
+  const handleWorkShare = async (work) => {
+    try {
+      await shareWork(work)
+    } catch (shareError) {
+      setError(normalizeMessage(shareError?.message) || '分享失败，请稍后重试。')
+    }
+  }
+
+  const handleWorkDelete = (workId) => {
+    setHiddenWorkIds((current) =>
+      current.includes(workId) ? current : [...current, workId],
+    )
+
+    if (lightboxWorkId === workId) {
+      setLightboxWorkId(null)
+    }
   }
 
   return (
@@ -596,6 +727,7 @@ function App() {
           actionFilter={actionFilter}
           onActionFilterChange={setActionFilter}
           actionOptions={ACTION_FILTER_OPTIONS}
+          resultCount={works.length}
         />
 
         <div className="workspace-scroll">
@@ -604,6 +736,12 @@ function App() {
               works={works}
               activeViewLabel={activeView.label}
               searchValue={searchValue}
+              onWorkOpen={handleWorkOpen}
+              onWorkDownload={handleWorkDownload}
+              onWorkRegenerate={handleWorkRegenerate}
+              onWorkEdit={handleWorkEdit}
+              onWorkShare={handleWorkShare}
+              onWorkDelete={handleWorkDelete}
               resetKey={[
                 selectedView,
                 searchValue.trim().toLowerCase(),
@@ -651,6 +789,15 @@ function App() {
           id="mobile-sidebar-drawer"
         />
       </div>
+
+      <Lightbox
+        items={lightboxItems}
+        activeIndex={activeLightboxIndex}
+        isOpen={activeLightboxIndex >= 0}
+        onClose={() => setLightboxWorkId(null)}
+        onNavigate={handleLightboxNavigate}
+        onDownload={handleWorkDownload}
+      />
     </div>
   )
 }

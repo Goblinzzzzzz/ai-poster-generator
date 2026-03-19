@@ -60,6 +60,7 @@ export default function TopBar({
   actionFilter,
   onActionFilterChange,
   actionOptions,
+  resultCount,
 }) {
   return (
     <header className="topbar">
@@ -79,6 +80,7 @@ export default function TopBar({
         <div>
           <h1 className="topbar-title">即梦式创作时间线</h1>
           <p className="topbar-description">{viewDescription}</p>
+          <p className="topbar-results">当前结果 {resultCount} 个</p>
         </div>
       </div>
 

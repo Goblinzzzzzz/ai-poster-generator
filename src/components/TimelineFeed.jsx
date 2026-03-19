@@ -22,7 +22,18 @@ const groupWorksByDate = (works) => {
   }))
 }
 
-export default function TimelineFeed({ works, activeViewLabel, searchValue, resetKey }) {
+export default function TimelineFeed({
+  works,
+  activeViewLabel,
+  searchValue,
+  resetKey,
+  onWorkOpen,
+  onWorkDownload,
+  onWorkRegenerate,
+  onWorkEdit,
+  onWorkShare,
+  onWorkDelete,
+}) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT)
   const sentinelRef = useRef(null)
 
@@ -89,7 +100,16 @@ export default function TimelineFeed({ works, activeViewLabel, searchValue, rese
 
           <div className="timeline-grid">
             {group.items.map((work) => (
-              <WorkCard key={work.id} work={work} />
+              <WorkCard
+                key={work.id}
+                work={work}
+                onOpen={onWorkOpen}
+                onDownload={onWorkDownload}
+                onRegenerate={onWorkRegenerate}
+                onEdit={onWorkEdit}
+                onShare={onWorkShare}
+                onDelete={onWorkDelete}
+              />
             ))}
           </div>
         </section>

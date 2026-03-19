@@ -77,8 +77,14 @@
   color: var(--text-soft);
 }
 
+.work-card-more-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .work-card-more svg,
-.work-card-play svg {
+.work-card-play svg,
+.work-card-actions svg {
   width: 16px;
   height: 16px;
 }
@@ -88,6 +94,10 @@
   overflow: hidden;
   border-radius: 20px;
   background: #f8fafc;
+}
+
+.work-card-media.is-interactive {
+  cursor: zoom-in;
 }
 
 .work-card-media img {
@@ -149,6 +159,30 @@
   color: #ffffff;
 }
 
+.work-card-media-hint {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: inline-flex;
+  padding: 0.42rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.work-card-media.is-interactive:hover .work-card-media-hint,
+.work-card-media.is-interactive:focus-visible .work-card-media-hint {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .work-card-footer {
   display: flex;
   flex-direction: column;
@@ -176,6 +210,9 @@
 }
 
 .work-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 0.52rem 0.86rem;
   border: 1px solid var(--border-soft);
   background: #ffffff;
@@ -190,4 +227,9 @@
   border-color: rgba(37, 99, 235, 0.24);
   background: rgba(239, 245, 255, 0.9);
   transform: translateY(-1px);
+}
+
+.work-card-media:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.4);
+  outline-offset: 2px;
 }

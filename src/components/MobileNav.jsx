@@ -4,7 +4,10 @@ import './MobileNav.css'
 export default function MobileNav({ items, selectedItem, onSelect }) {
   return (
     <nav className="mobile-nav" aria-label="移动端主导航">
-      <div className="mobile-nav-inner">
+      <div
+        className="mobile-nav-inner"
+        style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+      >
         {items.map((item) => {
           const isActive = item.id === selectedItem
 
