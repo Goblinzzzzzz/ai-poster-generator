@@ -1,94 +1,77 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { POSTER_API_URL } from './config'
 import Navbar from './components/Navbar'
-import PromptInput from './components/PromptInput'
-import StyleSelector from './components/StyleSelector'
-import AspectRatioSelector from './components/AspectRatioSelector'
-import TemplateLibrary from './components/TemplateLibrary'
 
-const ONE_MB = 1024 * 1024
-const MIN_BASE64_IMAGE_LENGTH = 64
-const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/
-
-// 扩展的负面提示词（对标即梦最佳实践）
 const DEFAULT_NEGATIVE_PROMPT = '文字、数字、水印、签名、尺寸标注、日期、时间、版本号、模糊、低质量、变形、杂乱、过曝、欠曝、噪点、畸形、多余手指、错误解剖、重复元素、低分辨率、压缩痕迹、色带、锯齿边缘'
 
-const STYLE_MAP = {
-  realistic: '写实摄影风格',
-  anime: '二次元动漫风格',
-  '3d': '3D 渲染风格',
-  oil: '油画风格',
-  watercolor: '水彩画风格',
-  cyberpunk: '赛博朋克风格',
-  minimal: '极简现代风格',
-  vintage: '复古怀旧风格',
-}
+const STYLE_PRESETS = [
+  { id: 'realistic', name: '写实', icon: '📷' },
+  { id: 'anime', name: '二次元', icon: '🎨' },
+  { id: '3d', name: '3D 渲染', icon: '🎯' },
+  { id: 'oil', name: '油画', icon: '🖼️' },
+  { id: 'watercolor', name: '水彩', icon: '💧' },
+  { id: 'cyberpunk', name: '赛博朋克', icon: '🌃' },
+  { id: 'minimal', name: '极简', icon: '⚪' },
+  { id: 'vintage', name: '复古', icon: '📻' },
+]
 
-const normalizeImageSrc = (value) => {
-  const normalized = String(value || '').trim()
-  if (!normalized) return ''
-  if (normalized.startsWith('data:image/') || normalized.startsWith('http://') || normalized.startsWith('https://') || normalized.startsWith('blob:') || normalized.startsWith('/')) {
-    return normalized
-  }
-  const compactValue = normalized.replace(/^base64,/, '').replace(/\s+/g, '')
-  if (compactValue.length >= MIN_BASE64_IMAGE_LENGTH && BASE64_IMAGE_PATTERN.test(compactValue)) {
-    return `data:image/png;base64,${compactValue}`
-  }
-  return ''
-}
+const ASPECT_RATIOS = [
+  { id: 'mobile', ratio: '9:16', name: '手机海报' },
+  { id: 'wechat_cover', ratio: '16:9', name: '横版封面' },
+  { id: 'weibo', ratio: '1:1', name: '正方形' },
+  { id: 'a4', ratio: '3:4', name: 'A4 打印' },
+]
+
+const PROMPT_TEMPLATES = [
+  { id: 1, text: '高质量，专业设计，现代办公室环境，简约风格，明亮均匀照明' },
+  { id: 2, text: '科技感，蓝色渐变背景，未来感线条，抽象几何图形' },
+  { id: 3, text: '温暖自然光，侧光营造层次感，色彩鲜艳，活力四射' },
+  { id: 4, text: '高端商务风格，专业影棚布光，品牌主色，哑光质感' },
+]
 
 function App() {
-  const [posterType, setPosterType] = useState('training')
-  const [sizeTemplate, setSizeTemplate] = useState('mobile')
-  const [title, setTitle] = useState('')
-  const [subtitle, setSubtitle] = useState('')
-  const [style, setStyle] = useState('minimal')
-  const [customPrompt, setCustomPrompt] = useState('')
-  const [logoFile, setLogoFile] = useState(null)
-  const [referenceFile, setReferenceFile] = useState(null)
+  const [prompt, setPrompt] = useState('')
+  const [selectedStyle, setSelectedStyle] = useState('minimal')
+  const [selectedRatio, setSelectedRatio] = useState('mobile')
+  const [referenceImage, setReferenceImage] = useState(null)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [generatedImage, setGeneratedImage] = useState(null)
+  const [generatedImages, setGeneratedImages] = useState([])
   const [error, setError] = useState(null)
-  const [showTemplates, setShowTemplates] = useState(false)
-
-  const handleUseTemplate = (template) => {
-    setCustomPrompt(template.prompt)
-    setShowTemplates(false)
-  }
-
-  const handleOptimizePrompt = async () => {
-    // TODO: 调用 AI 优化提示词
-    alert('提示词优化功能开发中...')
-  }
 
   const handleGenerate = async () => {
+    if (!prompt.trim()) {
+      setError('请输入提示词')
+      return
+    }
+
     setError(null)
     setIsGenerating(true)
 
     try {
       const formData = new FormData()
-      formData.append('posterType', posterType)
-      formData.append('sizeTemplate', sizeTemplate)
-      formData.append('title', title)
-      formData.append('subtitle', subtitle)
       
-      // 将风格选择映射为风格描述
-      const styleDesc = STYLE_MAP[style] || '简约现代'
-      formData.append('styleDesc', styleDesc)
+      // 核心参数
+      const styleDesc = STYLE_PRESETS.find(s => s.id === selectedStyle)?.name || '简约现代'
+      const ratioDesc = ASPECT_RATIOS.find(r => r.id === selectedRatio)?.ratio || '9:16'
       
-      // 使用优化后的 prompt
-      const finalPrompt = customPrompt || `${styleDesc}风格，${title || '海报设计'}，${subtitle || ''}`.trim()
+      // 构建完整 prompt（风格 + 用户输入）
+      const finalPrompt = `${styleDesc}风格，${prompt}，比例${ratioDesc}`
+      
       formData.append('customPrompt', finalPrompt)
       formData.append('negativePrompt', DEFAULT_NEGATIVE_PROMPT)
+      formData.append('sizeTemplate', selectedRatio)
+      formData.append('styleDesc', styleDesc)
 
-      if (logoFile) {
-        const logoData = await readFileAsBase64(logoFile)
-        formData.append('logoImage', logoData)
-      }
-
-      if (referenceFile) {
-        const refData = await readFileAsBase64(referenceFile)
-        formData.append('referenceImage', refData)
+      // 参考图（如果有）
+      if (referenceImage) {
+        const reader = new FileReader()
+        const readPromise = new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result)
+          reader.onerror = reject
+        })
+        reader.readAsDataURL(referenceImage)
+        const base64 = await readPromise
+        formData.append('referenceImage', base64)
       }
 
       const response = await fetch(POSTER_API_URL, {
@@ -97,175 +80,183 @@ function App() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || `生成失败：${response.status}`)
+        throw new Error(`生成失败：${response.status}`)
       }
 
       const data = await response.json()
-      
-      if (!data.imageUrl && !data.base64Image) {
-        throw new Error('未返回图片数据')
-      }
-
       const imageUrl = data.imageUrl || `data:image/png;base64,${data.base64Image}`
-      const normalizedUrl = normalizeImageSrc(imageUrl)
       
-      if (!normalizedUrl) {
-        throw new Error('图片格式不正确')
-      }
-
-      setGeneratedImage(normalizedUrl)
+      // 添加到作品列表
+      setGeneratedImages(prev => [imageUrl, ...prev])
     } catch (err) {
-      console.error('生成失败:', err)
-      setError(err.message || '生成失败，请重试')
+      setError(err.message)
     } finally {
       setIsGenerating(false)
     }
   }
 
-  const readFileAsBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
-
-  const handleDownload = () => {
-    if (!generatedImage) return
-    const link = document.createElement('a')
-    link.href = generatedImage
-    link.download = `poster-${Date.now()}.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+  const handleUseTemplate = (templateText) => {
+    setPrompt(templateText)
   }
 
   return (
-    <div className="app">
+    <div className="app-container">
       <Navbar />
       
-      <main className="main-content">
-        <div className="container">
-          {/* 标题区 */}
-          <section className="hero-section">
-            <h1 className="hero-title">
-              <span className="title-icon">🎨</span>
-              AI 海报生成器
-            </h1>
-            <p className="hero-subtitle">
-              输入创意描述，选择风格，一键生成专业海报
-            </p>
-          </section>
-
-          {/* 提示词输入 */}
-          <PromptInput
-            value={customPrompt}
-            onChange={setCustomPrompt}
-            onUseTemplate={() => setShowTemplates(!showTemplates)}
-            onOptimize={handleOptimizePrompt}
-          />
-
-          {/* 模板库（条件显示） */}
-          {showTemplates && (
-            <TemplateLibrary onSelect={handleUseTemplate} />
-          )}
-
-          {/* 风格选择 */}
-          <StyleSelector value={style} onChange={setStyle} />
-
-          {/* 比例选择 */}
-          <AspectRatioSelector value={sizeTemplate} onChange={setSizeTemplate} />
-
-          {/* 标题和副标题 */}
-          <div className="form-section">
-            <label className="form-label">海报标题</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="输入海报标题（可选）"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+      {/* 主内容区 - 左右分栏 */}
+      <div className="main-workspace">
+        {/* 左侧：提示词输入区 */}
+        <div className="left-panel">
+          <div className="prompt-section">
+            <label className="section-label">
+              <span className="label-icon">✨</span>
+              <span>描述你想生成的画面</span>
+            </label>
+            
+            <textarea
+              className="prompt-textarea"
+              placeholder="例如：一位穿着现代职业装的女性，办公室环境，极简主义风格，柔和自然光，三分法构图..."
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={6}
             />
-          </div>
-
-          <div className="form-section">
-            <label className="form-label">副标题</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="输入副标题（可选）"
-              value={subtitle}
-              onChange={(e) => setSubtitle(e.target.value)}
-            />
-          </div>
-
-          {/* 素材上传 */}
-          <div className="form-section">
-            <label className="form-label">🏷️ Logo 文件</label>
-            <input
-              type="file"
-              className="file-input"
-              accept="image/*"
-              onChange={(e) => setLogoFile(e.target.files[0])}
-            />
-            {logoFile && <div className="file-name">已选择：{logoFile.name}</div>}
-          </div>
-
-          <div className="form-section">
-            <label className="form-label">🖼️ 参考图</label>
-            <input
-              type="file"
-              className="file-input"
-              accept="image/*"
-              onChange={(e) => setReferenceFile(e.target.files[0])}
-            />
-            {referenceFile && <div className="file-name">已选择：{referenceFile.name}</div>}
-          </div>
-
-          {/* 生成按钮 */}
-          <button
-            className="btn-generate"
-            onClick={handleGenerate}
-            disabled={isGenerating}
-          >
-            {isGenerating ? (
-              <>
-                <span className="spinner"></span>
-                <span>生成中...</span>
-              </>
-            ) : (
-              <>
-                <span className="btn-icon">✨</span>
-                <span>立即生成</span>
-              </>
-            )}
-          </button>
-
-          {/* 错误提示 */}
-          {error && (
-            <div className="error-message">
-              <span className="error-icon">⚠️</span>
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* 生成结果 */}
-          {generatedImage && (
-            <div className="result-section">
-              <h2 className="result-title">生成结果</h2>
-              <div className="result-image-container">
-                <img src={generatedImage} alt="生成的海报" className="result-image" />
+            
+            {/* 提示词模板 */}
+            <div className="prompt-templates">
+              <div className="templates-label">💡 快速填充：</div>
+              <div className="template-chips">
+                {PROMPT_TEMPLATES.map(t => (
+                  <button
+                    key={t.id}
+                    className="template-chip"
+                    onClick={() => handleUseTemplate(t.text)}
+                  >
+                    {t.text.slice(0, 20)}...
+                  </button>
+                ))}
               </div>
-              <button className="btn-download" onClick={handleDownload}>
-                <span className="btn-icon">⬇️</span>
-                <span>下载图片</span>
-              </button>
             </div>
-          )}
+            
+            {/* 参考图上传 */}
+            <div className="reference-upload">
+              <label className="upload-label">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setReferenceImage(e.target.files[0])}
+                  className="file-input"
+                />
+                <span className="upload-text">
+                  📎 添加参考图 {referenceImage && `(${referenceImage.name})`}
+                </span>
+              </label>
+            </div>
+            
+            {/* 生成按钮 */}
+            <button
+              className="generate-button"
+              onClick={handleGenerate}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <>
+                  <span className="spinner"></span>
+                  <span>生成中...</span>
+                </>
+              ) : (
+                <>
+                  <span className="btn-icon">✨</span>
+                  <span>立即生成</span>
+                </>
+              )}
+            </button>
+            
+            {/* 错误提示 */}
+            {error && (
+              <div className="error-toast">
+                <span>⚠️</span>
+                <span>{error}</span>
+              </div>
+            )}
+          </div>
         </div>
-      </main>
+        
+        {/* 右侧：参数配置面板 */}
+        <div className="right-panel">
+          <div className="settings-section">
+            <h3 className="section-title">
+              <span>📐</span>
+              <span>画面比例</span>
+            </h3>
+            <div className="ratio-grid">
+              {ASPECT_RATIOS.map(ratio => (
+                <button
+                  key={ratio.id}
+                  className={`ratio-card ${selectedRatio === ratio.id ? 'active' : ''}`}
+                  onClick={() => setSelectedRatio(ratio.id)}
+                >
+                  <div className="ratio-value">{ratio.ratio}</div>
+                  <div className="ratio-name">{ratio.name}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="settings-section">
+            <h3 className="section-title">
+              <span>🎨</span>
+              <span>艺术风格</span>
+            </h3>
+            <div className="style-grid">
+              {STYLE_PRESETS.map(style => (
+                <button
+                  key={style.id}
+                  className={`style-card ${selectedStyle === style.id ? 'active' : ''}`}
+                  onClick={() => setSelectedStyle(style.id)}
+                >
+                  <div className="style-icon">{style.icon}</div>
+                  <div className="style-name">{style.name}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="settings-section">
+            <h3 className="section-title">
+              <span>⚙️</span>
+              <span>高级设置</span>
+            </h3>
+            <div className="advanced-settings">
+              <div className="setting-item">
+                <span className="setting-label">负面提示词</span>
+                <div className="setting-value">已配置（24 项）</div>
+              </div>
+              <div className="setting-item">
+                <span className="setting-label">生成质量</span>
+                <div className="setting-value">2K（标准）</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* 底部：作品展示区 */}
+      {generatedImages.length > 0 && (
+        <div className="gallery-section">
+          <h3 className="gallery-title">🎨 我的作品</h3>
+          <div className="gallery-grid">
+            {generatedImages.map((img, index) => (
+              <div key={index} className="gallery-item">
+                <img src={img} alt={`作品${index + 1}`} className="gallery-image" />
+                <div className="gallery-actions">
+                  <button className="action-btn">⬇️ 下载</button>
+                  <button className="action-btn">🔄 同款</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
