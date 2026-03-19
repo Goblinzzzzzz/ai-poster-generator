@@ -63,7 +63,7 @@ export default function TimelineFeed({ works, activeViewLabel, searchValue, rese
           <p>
             {searchValue
               ? '尝试减少关键词或切换筛选条件。'
-              : '切换左侧导航或在底部输入框提交新的创意内容。'}
+              : '切换导航或在底部输入框提交新的创意内容。'}
           </p>
         </div>
       </section>

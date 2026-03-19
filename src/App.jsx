@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import './App.css'
+import MobileNav from './components/MobileNav'
 import Sidebar from './components/Sidebar'
 import TimelineFeed from './components/TimelineFeed'
 import TopBar from './components/TopBar'
@@ -39,6 +41,10 @@ const QUICK_ACTIONS = [
   { id: 'search', label: '灵感搜索' },
   { id: 'design', label: '创意设计' },
 ]
+
+const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) =>
+  ['inspiration', 'generate', 'assets'].includes(item.id),
+)
 
 const TIME_FILTER_OPTIONS = [
   { value: 'all', label: '全部时间' },
@@ -423,6 +429,7 @@ const createGeneratedWork = (prompt, imageSrc, quickAction) => {
 
 function App() {
   const [selectedView, setSelectedView] = useState('generate')
+  const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState('')
@@ -437,6 +444,31 @@ function App() {
     QUICK_ACTIONS.find((action) => action.id === activeQuickAction) || QUICK_ACTIONS[0]
   const activeView =
     NAV_ITEMS.find((item) => item.id === selectedView) || NAV_ITEMS[1]
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+
+    if (isNavDrawerOpen) {
+      document.body.style.overflow = 'hidden'
+    }
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isNavDrawerOpen])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 1181px)')
+    const handleChange = (event) => {
+      if (event.matches) {
+        setIsNavDrawerOpen(false)
+      }
+    }
+
+    mediaQuery.addEventListener('change', handleChange)
+
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [])
 
   const works = [...generatedWorks, ...SEED_WORKS].filter((work) => {
     if (work.view !== selectedView) {
@@ -524,18 +556,25 @@ function App() {
     }
   }
 
+  const handleViewSelect = (viewId) => {
+    setSelectedView(viewId)
+    setIsNavDrawerOpen(false)
+  }
+
   return (
     <div className="jimeng-layout">
       <Sidebar
         items={NAV_ITEMS}
         selectedItem={selectedView}
-        onSelect={setSelectedView}
+        onSelect={handleViewSelect}
       />
 
       <div className="main-shell">
         <TopBar
           viewLabel={activeView.label}
           viewDescription={activeView.description}
+          isNavDrawerOpen={isNavDrawerOpen}
+          onMenuToggle={() => setIsNavDrawerOpen((current) => !current)}
           searchValue={searchValue}
           onSearchChange={setSearchValue}
           timeFilter={timeFilter}
@@ -577,6 +616,30 @@ function App() {
             />
           </div>
         </div>
+      </div>
+
+      <MobileNav
+        items={MOBILE_NAV_ITEMS}
+        selectedItem={selectedView}
+        onSelect={handleViewSelect}
+      />
+
+      <div className={`app-drawer-layer${isNavDrawerOpen ? ' is-open' : ''}`}>
+        <button
+          type="button"
+          className="app-drawer-backdrop"
+          onClick={() => setIsNavDrawerOpen(false)}
+          aria-label="关闭导航遮罩"
+        />
+        <Sidebar
+          items={NAV_ITEMS}
+          selectedItem={selectedView}
+          onSelect={handleViewSelect}
+          variant="drawer"
+          isOpen={isNavDrawerOpen}
+          onClose={() => setIsNavDrawerOpen(false)}
+          id="mobile-sidebar-drawer"
+        />
       </div>
     </div>
   )

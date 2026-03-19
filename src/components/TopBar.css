@@ -19,6 +19,24 @@
   gap: 14px;
 }
 
+.topbar-menu {
+  display: none;
+  min-width: 46px;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--card-shadow);
+  color: var(--text-main);
+}
+
+.topbar-menu svg {
+  width: 18px;
+  height: 18px;
+}
+
 .topbar-view-pill {
   display: inline-flex;
   align-items: center;
@@ -176,6 +194,12 @@
   }
 }
 
+@media (max-width: 1180px) {
+  .topbar-menu {
+    display: inline-flex;
+  }
+}
+
 @media (max-width: 860px) {
   .topbar {
     padding: 16px;
@@ -183,6 +207,7 @@
 
   .topbar-heading {
     align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .topbar-controls {
@@ -193,5 +218,9 @@
   .topbar-select-wrap,
   .topbar-user {
     width: 100%;
+  }
+
+  .topbar-view-pill {
+    order: 2;
   }
 }

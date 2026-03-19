@@ -1,5 +1,19 @@
 import './TopBar.css'
 
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M4.75 7.25h14.5M4.75 12h14.5M4.75 16.75h14.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -33,6 +47,8 @@ function ChevronIcon() {
 export default function TopBar({
   viewLabel,
   viewDescription,
+  isNavDrawerOpen,
+  onMenuToggle,
   searchValue,
   onSearchChange,
   timeFilter,
@@ -48,6 +64,17 @@ export default function TopBar({
   return (
     <header className="topbar">
       <div className="topbar-heading">
+        <button
+          type="button"
+          className="topbar-menu"
+          onClick={onMenuToggle}
+          aria-label={isNavDrawerOpen ? '关闭导航菜单' : '打开导航菜单'}
+          aria-expanded={isNavDrawerOpen}
+          aria-controls="mobile-sidebar-drawer"
+        >
+          <MenuIcon />
+        </button>
+
         <span className="topbar-view-pill">{viewLabel}</span>
         <div>
           <h1 className="topbar-title">即梦式创作时间线</h1>
