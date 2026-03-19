@@ -212,6 +212,7 @@
 .work-card-actions button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 0.52rem 0.86rem;
   border: 1px solid var(--border-soft);
@@ -221,12 +222,19 @@
     border-color 0.2s ease,
     background-color 0.2s ease,
     transform 0.2s ease;
+  cursor: pointer;
 }
 
-.work-card-actions button:hover {
+.work-card-actions button:hover:not(:disabled) {
   border-color: rgba(37, 99, 235, 0.24);
   background: rgba(239, 245, 255, 0.9);
   transform: translateY(-1px);
+}
+
+.work-card-actions button:disabled {
+  cursor: wait;
+  opacity: 0.56;
+  transform: none;
 }
 
 .work-card-media:focus-visible {

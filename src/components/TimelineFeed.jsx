@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import GeneratingCard from './GeneratingCard'
 import WorkCard from './WorkCard'
 import './TimelineFeed.css'
 
@@ -24,6 +25,7 @@ const groupWorksByDate = (works) => {
 
 export default function TimelineFeed({
   works,
+  hasAnyWorks,
   activeViewLabel,
   searchValue,
   resetKey,
@@ -32,6 +34,9 @@ export default function TimelineFeed({
   onWorkRegenerate,
   onWorkEdit,
   onWorkDelete,
+  onStartCreate,
+  onSuggestionSelect,
+  suggestions = [],
 }) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT)
   const sentinelRef = useRef(null)
@@ -65,16 +70,44 @@ export default function TimelineFeed({
   const groupedWorks = groupWorksByDate(visibleWorks)
 
   if (!works.length) {
+    const hasFilters = Boolean(searchValue)
+
     return (
       <section className="timeline-feed timeline-feed-empty">
         <div className="timeline-empty-card">
           <span className="timeline-empty-badge">{activeViewLabel}</span>
-          <h2>当前筛选下还没有作品</h2>
-          <p>
-            {searchValue
-              ? '尝试减少关键词或切换筛选条件。'
-              : '切换导航或在底部输入框提交新的创意内容。'}
-          </p>
+          {hasAnyWorks ? (
+            <>
+              <h2>当前筛选下还没有作品</h2>
+              <p>{hasFilters ? '尝试减少关键词或切换筛选条件。' : '切换导航或调整筛选条件后再试。'}</p>
+            </>
+          ) : (
+            <>
+              <h2>还没有作品</h2>
+              <p>开始你的第一个创作。输入一句清晰的主体、材质、光线和构图描述，就会出现在上方时间线。</p>
+              <button
+                type="button"
+                className="timeline-empty-primary"
+                onClick={onStartCreate}
+              >
+                开始你的第一个创作
+              </button>
+              {suggestions.length ? (
+                <div className="timeline-empty-suggestions">
+                  {suggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      className="timeline-empty-suggestion"
+                      onClick={() => onSuggestionSelect?.(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       </section>
     )
@@ -99,15 +132,23 @@ export default function TimelineFeed({
 
           <div className="timeline-grid">
             {group.items.map((work) => (
-              <WorkCard
-                key={work.id}
-                work={work}
-                onOpen={onWorkOpen}
-                onDownload={onWorkDownload}
-                onRegenerate={onWorkRegenerate}
-                onEdit={onWorkEdit}
-                onDelete={onWorkDelete}
-              />
+              work.status === 'generating' ? (
+                <GeneratingCard
+                  key={work.id}
+                  work={work}
+                  onEdit={onWorkEdit}
+                />
+              ) : (
+                <WorkCard
+                  key={work.id}
+                  work={work}
+                  onOpen={onWorkOpen}
+                  onDownload={onWorkDownload}
+                  onRegenerate={onWorkRegenerate}
+                  onEdit={onWorkEdit}
+                  onDelete={onWorkDelete}
+                />
+              )
             ))}
           </div>
         </section>

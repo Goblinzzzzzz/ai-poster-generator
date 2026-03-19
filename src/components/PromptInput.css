@@ -82,10 +82,6 @@
   font-size: 0.84rem;
 }
 
-.prompt-error {
-  color: #dc2626;
-}
-
 .prompt-submit {
   display: inline-flex;
   min-height: 48px;

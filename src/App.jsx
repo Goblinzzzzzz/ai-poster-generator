@@ -13,6 +13,13 @@ const DEFAULT_NEGATIVE_PROMPT =
   '文字、数字、水印、签名、尺寸标注、模糊、低清晰度、杂乱、过曝、欠曝、噪点、重复元素、压缩痕迹、锯齿边缘'
 const MIN_BASE64_IMAGE_LENGTH = 64
 const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/
+const EMPTY_STATE_SUGGESTIONS = [
+  '高端护肤产品海报，玻璃器皿，柔和晨光，冷白配色，极简留白。',
+  '精品咖啡新品海报，桌面微距，奶泡与银色勺子形成 S 曲线，杂志封面视角。',
+  '城市轻户外运动大片，晨跑女性穿过玻璃长廊，蓝白色块，海报感排版。',
+]
+const SENSITIVE_ERROR_PATTERN =
+  /sensitive|敏感|内容安全|审核|contain sensitive information/i
 
 const NAV_ITEMS = [
   {
@@ -73,224 +80,39 @@ const TIME_BUCKET_DAY_OFFSETS = {
   month: -30,
 }
 
-const SEED_WORKS = [
-  {
-    id: 'seed-01',
-    view: 'generate',
-    dateLabel: '今天',
-    timeBucket: 'today',
-    createdAt: '09:18',
-    author: 'Luna',
-    avatar: 'LU',
-    prompt: '高端护肤品牌 KV，玻璃器皿与白色花瓣悬浮，晨光透入，极简留白。',
-    mediaType: '图像',
-    mediaKind: 'image',
-    actionType: '生成',
-    headline: '晨雾护肤',
-    tone: '冷白高光与产品聚焦',
-    surface:
-      'linear-gradient(160deg, #f8fbff 0%, #e0efff 48%, #bfd7ff 100%)',
-    aspectRatio: '4 / 5',
+const ERROR_COPY = {
+  validation: {
+    title: '请输入创作描述',
+    message: '请先输入提示词，再开始生成。',
+    retryable: false,
   },
-  {
-    id: 'seed-02',
-    view: 'inspiration',
-    dateLabel: '今天',
-    timeBucket: 'today',
-    createdAt: '08:44',
-    author: 'Ming',
-    avatar: 'MI',
-    prompt: '城市轻户外运动大片，晨跑女性穿过玻璃长廊，蓝白色块，海报感排版。',
-    mediaType: '图像',
-    mediaKind: 'image',
-    actionType: '编辑',
-    headline: '轻户外构图',
-    tone: '通透感与动态留白',
-    surface:
-      'linear-gradient(180deg, #eff8ff 0%, #d5ecff 58%, #a8d4ff 100%)',
-    aspectRatio: '4 / 6',
+  sensitive: {
+    title: '内容需要调整',
+    message: '输入内容包含敏感词汇，请修改后重试。',
+    hint: '建议保留主体、材质、光线和构图，删去可能触发审核的描述。',
+    retryable: false,
   },
-  {
-    id: 'seed-03',
-    view: 'canvas',
-    dateLabel: '今天',
-    timeBucket: 'today',
-    createdAt: '08:12',
-    author: 'Nora',
-    avatar: 'NO',
-    prompt: '科技峰会主视觉延展，纵向主海报到横版社媒封面统一语言，白银灰色系。',
-    mediaType: '视频',
-    mediaKind: 'video',
-    actionType: '延展',
-    headline: '峰会延展',
-    tone: '版式切换与节奏预演',
-    surface:
-      'linear-gradient(160deg, #f5f7fb 0%, #dfe8f4 42%, #c4d2e5 100%)',
-    aspectRatio: '16 / 9',
+  network: {
+    title: '网络连接失败',
+    message: '网络连接失败，请检查网络后重试。',
+    retryable: true,
   },
-  {
-    id: 'seed-04',
-    view: 'assets',
-    dateLabel: '今天',
-    timeBucket: 'today',
-    createdAt: '07:30',
-    author: 'Ava',
-    avatar: 'AV',
-    prompt: '电商品牌春季素材包，模特半身、彩妆瓶身、花瓣纹理和贴纸元素分层整理。',
-    mediaType: '图像',
-    mediaKind: 'image',
-    actionType: '编辑',
-    headline: '春季素材包',
-    tone: '便于二次排版的资产整理',
-    surface:
-      'linear-gradient(160deg, #fff9f5 0%, #ffe9df 48%, #ffd2bf 100%)',
-    aspectRatio: '1 / 1',
+  api: {
+    title: '生成服务暂时不可用',
+    message: '生成服务暂时不可用，请稍后重试。',
+    retryable: true,
   },
-  {
-    id: 'seed-05',
-    view: 'generate',
-    dateLabel: '昨天',
-    timeBucket: 'yesterday',
-    createdAt: '21:16',
-    author: 'Suki',
-    avatar: 'SU',
-    prompt: '精品咖啡新品海报，桌面微距，奶泡与银色勺子形成 S 曲线，杂志封面视角。',
-    mediaType: '图像',
-    mediaKind: 'image',
-    actionType: '生成',
-    headline: '咖啡新品',
-    tone: '质感器物与轻商业调性',
-    surface:
-      'linear-gradient(165deg, #fff8f2 0%, #f7dccb 52%, #d1b39f 100%)',
-    aspectRatio: '4 / 5',
+  other: {
+    title: '生成失败',
+    message: '生成失败，请稍后重试。',
+    retryable: false,
   },
-  {
-    id: 'seed-06',
-    view: 'inspiration',
-    dateLabel: '昨天',
-    timeBucket: 'yesterday',
-    createdAt: '20:42',
-    author: 'Kai',
-    avatar: 'KA',
-    prompt: '青年耳机品牌视觉参考，透明亚克力道具，冷色氛围，科技电商拍法。',
-    mediaType: '视频',
-    mediaKind: 'video',
-    actionType: '延展',
-    headline: '耳机动态板',
-    tone: '产品运动轨迹和镜头提案',
-    surface:
-      'linear-gradient(160deg, #f6fbff 0%, #d7ebff 50%, #8fc7ff 100%)',
-    aspectRatio: '3 / 4',
+  download: {
+    title: '下载失败',
+    message: '下载失败，请稍后重试。',
+    retryable: false,
   },
-  {
-    id: 'seed-07',
-    view: 'canvas',
-    dateLabel: '昨天',
-    timeBucket: 'yesterday',
-    createdAt: '18:35',
-    author: 'Ivy',
-    avatar: 'IV',
-    prompt: '公益展览导视系统画布，网格排版，轻蓝线框与大标题对齐方案。',
-    mediaType: '图像',
-    mediaKind: 'image',
-    actionType: '编辑',
-    headline: '导视画布',
-    tone: '栅格系统与留白控制',
-    surface:
-      'linear-gradient(180deg, #fafcff 0%, #e7f0fb 54%, #d6e3f4 100%)',
-    aspectRatio: '4 / 5',
-  },
-  {
-    id: 'seed-08',
-    view: 'assets',
-    dateLabel: '昨天',
-    timeBucket: 'yesterday',
-    createdAt: '17:08',
-    author: 'Rae',
-    avatar: 'RA',
-    prompt: '茶饮品牌包装资产，标签刀版、LOGO 组合与插画纹样的统一输出。',
-    mediaType: '图像',
-    mediaKind: 'image',
-    actionType: '编辑',
-    headline: '包装资产',
-    tone: '品牌组件归档',
-    surface:
-      'linear-gradient(160deg, #f8fff6 0%, #ddf7d8 48%, #b9e9b7 100%)',
-    aspectRatio: '4 / 4.8',
-  },
-  {
-    id: 'seed-09',
-    view: 'generate',
-    dateLabel: '2025年2月14日',
-    timeBucket: 'week',
-    createdAt: '15:24',
-    author: 'Yao',
-    avatar: 'YA',
-    prompt: '婚礼酒店主视觉，水晶灯与丝绸桌布，白金色奢雅但不过度繁复。',
-    mediaType: '图像',
-    mediaKind: 'image',
-    actionType: '生成',
-    headline: '婚礼主视觉',
-    tone: '白金层次与柔雾空间',
-    surface:
-      'linear-gradient(160deg, #fffefd 0%, #f6eee1 50%, #e5d5bf 100%)',
-    aspectRatio: '4 / 6',
-  },
-  {
-    id: 'seed-10',
-    view: 'inspiration',
-    dateLabel: '2025年2月14日',
-    timeBucket: 'week',
-    createdAt: '14:06',
-    author: 'Tina',
-    avatar: 'TI',
-    prompt: '轻奢珠宝大片参考，弧形镜面、半透明亚克力台座，偏 editorial 审美。',
-    mediaType: '图像',
-    mediaKind: 'image',
-    actionType: '编辑',
-    headline: '珠宝灵感',
-    tone: '镜面反射与极细字体',
-    surface:
-      'linear-gradient(170deg, #fdfcff 0%, #ece7fb 52%, #d0c5f4 100%)',
-    aspectRatio: '4 / 5.4',
-  },
-  {
-    id: 'seed-11',
-    view: 'canvas',
-    dateLabel: '2025年2月08日',
-    timeBucket: 'month',
-    createdAt: '11:20',
-    author: 'Echo',
-    avatar: 'EC',
-    prompt: '新品发布会大屏与邀请函同源画布，横竖版切换验证，保留白色主基底。',
-    mediaType: '视频',
-    mediaKind: 'video',
-    actionType: '延展',
-    headline: '发布会画布',
-    tone: '主视觉系统化预演',
-    surface:
-      'linear-gradient(165deg, #f8fafc 0%, #e7edf5 48%, #d8dfeb 100%)',
-    aspectRatio: '16 / 10',
-  },
-  {
-    id: 'seed-12',
-    view: 'assets',
-    dateLabel: '2025年2月08日',
-    timeBucket: 'month',
-    createdAt: '10:18',
-    author: 'Demi',
-    avatar: 'DE',
-    prompt: '宠物品牌社媒模板资产，白底卡片组件、圆角角标和柔和插画边框整理。',
-    mediaType: '图像',
-    mediaKind: 'image',
-    actionType: '编辑',
-    headline: '社媒模板库',
-    tone: '适合批量替换内容的基础模板',
-    surface:
-      'linear-gradient(160deg, #fffef8 0%, #fff1d8 52%, #f8d597 100%)',
-    aspectRatio: '1 / 1',
-  },
-]
+}
 
 const normalizeMessage = (value) => {
   if (typeof value !== 'string') {
@@ -348,7 +170,28 @@ const buildTitleFromPrompt = (prompt) => {
   return normalizedPrompt.split(/[，。！？,.!?\n]/)[0].slice(0, 50) || normalizedPrompt.slice(0, 50)
 }
 
-const extractApiErrorMessage = ({ payload, rawText, status, statusText }) => {
+const formatWorkTime = (date = new Date()) =>
+  date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+
+const createAppError = (type, overrides = {}) => {
+  const preset = ERROR_COPY[type] || ERROR_COPY.other
+
+  return {
+    type,
+    title: overrides.title || preset.title,
+    message: overrides.message || preset.message,
+    hint: overrides.hint || preset.hint || '',
+    retryable:
+      typeof overrides.retryable === 'boolean' ? overrides.retryable : preset.retryable,
+    retryPrompt: overrides.retryPrompt || '',
+  }
+}
+
+const createResponseError = ({ payload, rawText, status, statusText }) => {
   const messageCandidates = [
     payload?.error?.message,
     typeof payload?.error?.details === 'string' ? payload.error.details : '',
@@ -356,18 +199,68 @@ const extractApiErrorMessage = ({ payload, rawText, status, statusText }) => {
     payload?.detail,
     rawText,
   ]
-
   const message = messageCandidates.map(normalizeMessage).find(Boolean)
 
-  if (message && !message.startsWith('<')) {
-    return message
+  if (message && !message.startsWith('<') && SENSITIVE_ERROR_PATTERN.test(message)) {
+    const error = new Error(ERROR_COPY.sensitive.message)
+    error.type = 'sensitive'
+    error.retryable = false
+    return error
   }
 
   if (status >= 500) {
-    return `生成服务暂时不可用（${status} ${normalizeMessage(statusText)}）。`
+    const error = new Error(ERROR_COPY.api.message)
+    error.type = 'api'
+    error.retryable = true
+    return error
   }
 
-  return `生成失败（${status} ${normalizeMessage(statusText)}）。`
+  if (status === 429) {
+    const error = new Error('生成请求过于频繁，请稍后重试。')
+    error.type = 'api'
+    error.retryable = true
+    return error
+  }
+
+  const fallbackMessage =
+    message && !message.startsWith('<')
+      ? message
+      : `生成失败（${status} ${normalizeMessage(statusText)}）。`
+  const error = new Error(fallbackMessage)
+  error.type = 'other'
+  error.retryable = false
+  return error
+}
+
+const normalizeRequestError = (requestError, prompt = '') => {
+  if (requestError instanceof TypeError) {
+    return createAppError('network', { retryPrompt: prompt })
+  }
+
+  const errorType = requestError?.type
+
+  if (errorType === 'sensitive') {
+    return createAppError('sensitive', { retryPrompt: prompt })
+  }
+
+  if (errorType === 'api') {
+    return createAppError('api', {
+      message: normalizeMessage(requestError?.message) || ERROR_COPY.api.message,
+      retryPrompt: prompt,
+      retryable: true,
+    })
+  }
+
+  const message = normalizeMessage(requestError?.message)
+
+  if (message && SENSITIVE_ERROR_PATTERN.test(message)) {
+    return createAppError('sensitive', { retryPrompt: prompt })
+  }
+
+  return createAppError('other', {
+    message: message || ERROR_COPY.other.message,
+    retryPrompt: prompt,
+  })
 }
 
 const matchesTimeFilter = (work, filterValue) => {
@@ -405,20 +298,17 @@ const matchesSearch = (work, query) => {
   return searchableText.includes(normalizedQuery)
 }
 
-const createGeneratedWork = (prompt, imageSrc, quickAction) => {
+const createGeneratingWork = (prompt, quickAction) => {
   const now = new Date()
-  const createdAt = now.toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+  const sortTimestamp = now.getTime()
 
   return {
-    id: `generated-${now.getTime()}`,
+    id: `generated-${sortTimestamp}`,
+    status: 'generating',
     view: 'generate',
     dateLabel: '今天',
     timeBucket: 'today',
-    createdAt,
+    createdAt: formatWorkTime(now),
     author: '你',
     avatar: 'ME',
     prompt,
@@ -426,14 +316,20 @@ const createGeneratedWork = (prompt, imageSrc, quickAction) => {
     mediaKind: 'image',
     actionType: '生成',
     headline: buildTitleFromPrompt(prompt) || '即时创作',
-    tone: `${quickAction.label} · 最新生成`,
-    imageSrc,
-    sortTimestamp: now.getTime(),
+    tone: `${quickAction.label} · 生成中`,
+    sortTimestamp,
     surface:
       'linear-gradient(160deg, #f8fbff 0%, #ebf2ff 48%, #d9e7ff 100%)',
     aspectRatio: '4 / 5',
   }
 }
+
+const createGeneratedWork = (pendingWork, imageSrc, quickAction) => ({
+  ...pendingWork,
+  status: 'ready',
+  imageSrc,
+  tone: `${quickAction.label} · 最新生成`,
+})
 
 const resolveWorkTimestamp = (work) => {
   if (typeof work.sortTimestamp === 'number') {
@@ -465,13 +361,13 @@ const resolveWorkTimestamp = (work) => {
 }
 
 const compareWorksByTime = (left, right) => {
-  const difference = resolveWorkTimestamp(left) - resolveWorkTimestamp(right)
+  const difference = resolveWorkTimestamp(right) - resolveWorkTimestamp(left)
 
   if (difference !== 0) {
     return difference
   }
 
-  return left.id.localeCompare(right.id)
+  return right.id.localeCompare(left.id)
 }
 
 function App() {
@@ -479,7 +375,7 @@ function App() {
   const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(null)
   const [searchValue, setSearchValue] = useState('')
   const [timeFilter, setTimeFilter] = useState('all')
   const [mediaFilter, setMediaFilter] = useState('all')
@@ -531,7 +427,7 @@ function App() {
 
   const allWorks = useMemo(
     () =>
-      [...SEED_WORKS, ...generatedWorks]
+      generatedWorks
         .filter((work) => !hiddenWorkIds.includes(work.id))
         .sort(compareWorksByTime),
     [generatedWorks, hiddenWorkIds],
@@ -542,6 +438,10 @@ function App() {
       allWorks.filter((work) => {
         if (work.view !== selectedView) {
           return false
+        }
+
+        if (work.status === 'generating') {
+          return true
         }
 
         if (!matchesTimeFilter(work, timeFilter)) {
@@ -562,7 +462,10 @@ function App() {
   )
 
   const lightboxItems = useMemo(
-    () => works.filter((work) => work.mediaKind === 'image'),
+    () =>
+      works.filter(
+        (work) => work.mediaKind === 'image' && work.status !== 'generating',
+      ),
     [works],
   )
 
@@ -586,23 +489,33 @@ function App() {
   }
 
   const handleGenerate = async (promptOverride) => {
+    if (isGenerating) {
+      return
+    }
+
     const nextPrompt = typeof promptOverride === 'string' ? promptOverride : prompt
     const trimmedPrompt = nextPrompt.trim()
 
     if (!trimmedPrompt) {
-      setError('请输入创作描述。')
+      setError(createAppError('validation'))
+      focusPromptInput()
       return
     }
 
+    const quickAction = activeQuickActionConfig
+    const pendingWork = createGeneratingWork(trimmedPrompt, quickAction)
+
+    setSelectedView('generate')
     setIsGenerating(true)
-    setError('')
+    setError(null)
+    setGeneratedWorks((current) => [pendingWork, ...current])
 
     try {
       const formData = new FormData()
       formData.append('posterType', 'brand')
       formData.append('sizeTemplate', 'mobile')
       formData.append('title', buildTitleFromPrompt(trimmedPrompt))
-      formData.append('styleDesc', `极简白色卡片式海报，${activeQuickActionConfig.label}`)
+      formData.append('styleDesc', `极简白色卡片式海报，${quickAction.label}`)
       formData.append('customPrompt', trimmedPrompt)
       formData.append('negativePrompt', DEFAULT_NEGATIVE_PROMPT)
       formData.append('logoPosition', 'auto')
@@ -616,14 +529,12 @@ function App() {
       const payload = parseJsonSafely(rawText)
 
       if (!response.ok) {
-        throw new Error(
-          extractApiErrorMessage({
-            payload,
-            rawText,
-            status: response.status,
-            statusText: response.statusText,
-          }),
-        )
+        throw createResponseError({
+          payload,
+          rawText,
+          status: response.status,
+          statusText: response.statusText,
+        })
       }
 
       const nextImage = normalizeImageSrc(
@@ -638,18 +549,40 @@ function App() {
         throw new Error('生成完成，但未返回可预览图片。')
       }
 
-      setSelectedView('generate')
       setTimeFilter('today')
-      setGeneratedWorks((current) => [
-        ...current,
-        createGeneratedWork(trimmedPrompt, nextImage, activeQuickActionConfig),
-      ])
+      setGeneratedWorks((current) =>
+        current.map((work) =>
+          work.id === pendingWork.id ? createGeneratedWork(work, nextImage, quickAction) : work,
+        ),
+      )
       setPrompt('')
     } catch (requestError) {
-      setError(normalizeMessage(requestError?.message) || '生成失败，请稍后重试。')
+      setGeneratedWorks((current) => current.filter((work) => work.id !== pendingWork.id))
+      setError(normalizeRequestError(requestError, trimmedPrompt))
     } finally {
       setIsGenerating(false)
     }
+  }
+
+  const handleRetryGenerate = () => {
+    if (!error?.retryable || !error.retryPrompt) {
+      return
+    }
+
+    handleGenerate(error.retryPrompt)
+  }
+
+  const handleStartCreate = () => {
+    setSelectedView('generate')
+    setError(null)
+    focusPromptInput()
+  }
+
+  const handleSuggestionSelect = (suggestion) => {
+    setSelectedView('generate')
+    setPrompt(suggestion)
+    setError(null)
+    focusPromptInput()
   }
 
   const handleViewSelect = (viewId) => {
@@ -668,15 +601,20 @@ function App() {
   const handleWorkDownload = async (work) => {
     try {
       await downloadWorkImage(work)
+      setError(null)
     } catch (downloadError) {
-      setError(normalizeMessage(downloadError?.message) || '下载失败，请稍后重试。')
+      setError(
+        createAppError('download', {
+          message: normalizeMessage(downloadError?.message) || ERROR_COPY.download.message,
+        }),
+      )
     }
   }
 
   const handleWorkEdit = (work) => {
     setSelectedView('generate')
     setPrompt(work.prompt || '')
-    setError('')
+    setError(null)
     focusPromptInput()
   }
 
@@ -731,6 +669,7 @@ function App() {
           <div className="workspace-inner">
             <TimelineFeed
               works={works}
+              hasAnyWorks={allWorks.length > 0}
               activeViewLabel={activeView.label}
               searchValue={searchValue}
               onWorkOpen={handleWorkOpen}
@@ -738,13 +677,16 @@ function App() {
               onWorkRegenerate={handleWorkRegenerate}
               onWorkEdit={handleWorkEdit}
               onWorkDelete={handleWorkDelete}
+              onStartCreate={handleStartCreate}
+              onSuggestionSelect={handleSuggestionSelect}
+              suggestions={EMPTY_STATE_SUGGESTIONS}
               resetKey={[
                 selectedView,
                 searchValue.trim().toLowerCase(),
                 timeFilter,
                 mediaFilter,
                 actionFilter,
-                generatedWorks.length,
+                generatedWorks.map((work) => `${work.id}:${work.status}`).join(','),
                 hiddenWorkIds.length,
               ].join('|')}
             />
@@ -753,6 +695,7 @@ function App() {
               value={prompt}
               onChange={setPrompt}
               onSubmit={handleGenerate}
+              onRetry={handleRetryGenerate}
               isGenerating={isGenerating}
               error={error}
               quickActions={QUICK_ACTIONS}

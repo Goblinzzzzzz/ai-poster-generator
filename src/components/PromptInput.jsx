@@ -1,9 +1,11 @@
+import ErrorAlert from './ErrorAlert'
 import './PromptInput.css'
 
 export default function PromptInput({
   value,
   onChange,
   onSubmit,
+  onRetry,
   isGenerating,
   error,
   quickActions,
@@ -60,16 +62,13 @@ export default function PromptInput({
           rows={4}
         />
 
+        <ErrorAlert error={error} onRetry={onRetry} />
+
         <div className="prompt-footer">
           <div className="prompt-status">
             <span>{value.trim().length} 字</span>
             <span>Ctrl / Command + Enter 快速生成</span>
             <span>建议避免政治、暴力、成人或违法相关词语</span>
-            {error ? (
-              <span className="prompt-error" role="alert">
-                {error}
-              </span>
-            ) : null}
           </div>
 
           <button
