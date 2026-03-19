@@ -43,7 +43,6 @@ export default function WorkCard({
   onDownload,
   onRegenerate,
   onEdit,
-  onShare,
   onDelete,
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -56,7 +55,6 @@ export default function WorkCard({
     const actions = {
       regenerate: () => onRegenerate?.(work),
       edit: () => onEdit?.(work),
-      share: () => onShare?.(work),
       download: () => onDownload?.(work),
       delete: () => onDelete?.(work.id),
     }

@@ -31,7 +31,6 @@ export default function TimelineFeed({
   onWorkDownload,
   onWorkRegenerate,
   onWorkEdit,
-  onWorkShare,
   onWorkDelete,
 }) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT)
@@ -107,7 +106,6 @@ export default function TimelineFeed({
                 onDownload={onWorkDownload}
                 onRegenerate={onWorkRegenerate}
                 onEdit={onWorkEdit}
-                onShare={onWorkShare}
                 onDelete={onWorkDelete}
               />
             ))}

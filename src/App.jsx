@@ -7,7 +7,7 @@ import TimelineFeed from './components/TimelineFeed'
 import TopBar from './components/TopBar'
 import PromptInput from './components/PromptInput'
 import { POSTER_API_URL } from './config'
-import { downloadWorkImage, shareWork } from './utils/download'
+import { downloadWorkImage } from './utils/download'
 
 const DEFAULT_NEGATIVE_PROMPT =
   '文字、数字、水印、签名、尺寸标注、模糊、低清晰度、杂乱、过曝、欠曝、噪点、重复元素、压缩痕迹、锯齿边缘'
@@ -586,7 +586,8 @@ function App() {
   }
 
   const handleGenerate = async (promptOverride) => {
-    const trimmedPrompt = String(promptOverride ?? prompt).trim()
+    const nextPrompt = typeof promptOverride === 'string' ? promptOverride : prompt
+    const trimmedPrompt = nextPrompt.trim()
 
     if (!trimmedPrompt) {
       setError('请输入创作描述。')
@@ -684,14 +685,6 @@ function App() {
     await handleGenerate(work.prompt)
   }
 
-  const handleWorkShare = async (work) => {
-    try {
-      await shareWork(work)
-    } catch (shareError) {
-      setError(normalizeMessage(shareError?.message) || '分享失败，请稍后重试。')
-    }
-  }
-
   const handleWorkDelete = (workId) => {
     if (!window.confirm('删除后将从当前时间线隐藏这张作品，确认继续吗？')) {
       return
@@ -744,7 +737,6 @@ function App() {
               onWorkDownload={handleWorkDownload}
               onWorkRegenerate={handleWorkRegenerate}
               onWorkEdit={handleWorkEdit}
-              onWorkShare={handleWorkShare}
               onWorkDelete={handleWorkDelete}
               resetKey={[
                 selectedView,

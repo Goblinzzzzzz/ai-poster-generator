@@ -34,6 +34,7 @@ const pickFields = (source = {}, fields = []) =>
   }, {});
 
 const joinPromptParts = (parts = []) => parts.filter(Boolean).join("，");
+const normalizeOptionalString = (value, maxLength) => (typeof value === "string" ? normalizeInputText(value, maxLength) : "");
 
 const sanitizeAuxiliaryFields = (input = {}) => {
   const { sanitized } = filterSensitivePayload(input, { fields: AUXILIARY_FILTER_FIELDS });
@@ -44,16 +45,16 @@ const sanitizeAuxiliaryFields = (input = {}) => {
 };
 
 export const normalizePromptInput = (input = {}) => ({
-  posterType: normalizeInputText(input.posterType, 40) || "training",
-  sizeTemplate: normalizeInputText(input.sizeTemplate, 40) || "mobile",
-  title: normalizeInputText(input.title, 50),
-  subtitle: normalizeInputText(input.subtitle, 200),
-  styleDesc: normalizeInputText(input.styleDesc, 120) || "简约现代",
-  customPrompt: normalizeInputText(input.customPrompt, 1000),
-  negativePrompt: normalizeInputText(input.negativePrompt, 300),
-  logoPosition: normalizeInputText(input.logoPosition, 40) || "auto",
-  logoUrl: normalizeInputText(input.logoUrl, 2048),
-  referenceImageUrl: normalizeInputText(input.referenceImageUrl, 2048),
+  posterType: normalizeOptionalString(input.posterType, 40) || "training",
+  sizeTemplate: normalizeOptionalString(input.sizeTemplate, 40) || "mobile",
+  title: normalizeOptionalString(input.title, 50),
+  subtitle: normalizeOptionalString(input.subtitle, 200),
+  styleDesc: normalizeOptionalString(input.styleDesc, 120) || "简约现代",
+  customPrompt: normalizeOptionalString(input.customPrompt, 1000),
+  negativePrompt: normalizeOptionalString(input.negativePrompt, 300),
+  logoPosition: normalizeOptionalString(input.logoPosition, 40) || "auto",
+  logoUrl: normalizeOptionalString(input.logoUrl, 2048),
+  referenceImageUrl: normalizeOptionalString(input.referenceImageUrl, 2048),
 });
 
 export const buildPrompt = (rawInput = {}) => {

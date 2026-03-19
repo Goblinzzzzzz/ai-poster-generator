@@ -105,32 +105,3 @@ export const downloadWorkImage = async (work) => {
     triggerDownload(source, fileName)
   }
 }
-
-export const shareWork = async (work) => {
-  const title = work?.headline || '作品分享'
-  const text = [title, work?.prompt].filter(Boolean).join('\n')
-  const source = getWorkPreviewSrc(work)
-  const shareUrl = source.startsWith('http') ? source : undefined
-
-  if (navigator.share) {
-    try {
-      await navigator.share({
-        title,
-        text,
-        url: shareUrl,
-      })
-      return
-    } catch (error) {
-      if (error?.name === 'AbortError') {
-        return
-      }
-    }
-  }
-
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText([text, shareUrl].filter(Boolean).join('\n'))
-    return
-  }
-
-  throw new Error('当前环境不支持分享。')
-}

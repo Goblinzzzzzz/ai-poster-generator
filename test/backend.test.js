@@ -49,6 +49,18 @@ test("buildPrompt keeps custom prompt unchanged and avoids extra prompt scaffold
   assert.equal(result.metadata.logoPositionLabel, "左上角");
 });
 
+test("buildPrompt ignores non-string customPrompt values instead of coercing them into object text", () => {
+  const result = buildPrompt({
+    title: "品牌海报",
+    customPrompt: { value: "错误类型" },
+    styleDesc: "现代简约",
+  });
+
+  assert.equal(result.usedCustomPrompt, false);
+  assert.doesNotMatch(result.prompt, /\[object Object\]/);
+  assert.match(result.prompt, /品牌海报/);
+});
+
 test("validateGeneratePayload rejects missing title", () => {
   assert.throws(
     () => validateGeneratePayload({ subtitle: "缺少标题" }),

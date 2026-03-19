@@ -20,6 +20,12 @@ export default function PromptInput({
     }
   }
 
+  const handleSubmit = () => {
+    if (!isGenerating) {
+      onSubmit()
+    }
+  }
+
   return (
     <div className="prompt-dock">
       <section className="prompt-panel">
@@ -69,7 +75,7 @@ export default function PromptInput({
           <button
             type="button"
             className="prompt-submit"
-            onClick={onSubmit}
+            onClick={handleSubmit}
             disabled={isGenerating}
             aria-busy={isGenerating}
           >

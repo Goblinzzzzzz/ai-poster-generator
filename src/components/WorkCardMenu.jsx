@@ -4,7 +4,6 @@ import './WorkCardMenu.css'
 const MENU_ITEMS = [
   { id: 'regenerate', label: '重新生成' },
   { id: 'edit', label: '编辑' },
-  { id: 'share', label: '分享' },
   { id: 'download', label: '下载' },
   { id: 'delete', label: '删除', danger: true },
 ]
