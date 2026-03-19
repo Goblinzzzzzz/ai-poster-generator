@@ -4,7 +4,7 @@ import { extname, join } from "node:path";
 
 import { generatePoster } from "../utils/doubao.js";
 import { describeEnvValue, normalizeEnvValue } from "../utils/env.js";
-import { buildPrompt } from "../utils/prompt-builder.js";
+import { buildPrompt, normalizePromptInput } from "../utils/prompt-builder.js";
 import {
   createSensitivePromptMessage,
   filterSensitivePayload,
@@ -192,18 +192,7 @@ export const validateGeneratePayload = (payload = {}) => {
     }
   }
 
-  const normalized = {
-    posterType: normalizeInputText(payload.posterType, 40) || "training",
-    sizeTemplate: normalizeInputText(payload.sizeTemplate, 40) || "mobile",
-    title: normalizeInputText(payload.title, 50),
-    subtitle: normalizeInputText(payload.subtitle, 200),
-    styleDesc: normalizeInputText(payload.styleDesc, 120),
-    customPrompt: normalizeInputText(payload.customPrompt, 1000),
-    negativePrompt: normalizeInputText(payload.negativePrompt, 300),
-    logoPosition: normalizeInputText(payload.logoPosition, 40) || "auto",
-    logoUrl: normalizeInputText(payload.logoUrl, 2048),
-    referenceImageUrl: normalizeInputText(payload.referenceImageUrl, 2048),
-  };
+  const normalized = normalizePromptInput(payload);
 
   const sensitiveResult = filterSensitivePayload(normalized, { strict: true });
 
@@ -491,10 +480,12 @@ export const createApiRouter = ({
       });
       const referenceImages = [normalizedPayload.referenceImageUrl, normalizedPayload.logoUrl].filter(Boolean);
       const promptResult = buildPrompt(normalizedPayload);
+      const promptSource = normalizedPayload.customPrompt ? "custom-prompt-direct" : "template-fallback";
 
       logDebug("prepared prompt and payload for generation:", {
         requestId,
         normalizedPayload,
+        promptSource,
         publicAssetUrls: {
           logoUrl: normalizedPayload.logoUrl,
           referenceImageUrl: normalizedPayload.referenceImageUrl,

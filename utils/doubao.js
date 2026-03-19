@@ -138,8 +138,16 @@ const maybeParseJson = (value) => {
   }
 };
 
-const buildGenerationPrompt = ({ prompt, negativePrompt = "" }) =>
-  negativePrompt ? `${prompt}\n\n负面约束：${negativePrompt}` : prompt;
+const buildGenerationPrompt = ({ prompt, negativePrompt = "" }) => {
+  const normalizedPrompt = String(prompt || "").trim();
+  const normalizedNegativePrompt = String(negativePrompt || "").trim();
+
+  if (!normalizedNegativePrompt) {
+    return normalizedPrompt;
+  }
+
+  return `${normalizedPrompt}\n避免：${normalizedNegativePrompt}`;
+};
 
 const normalizeInputImage = (value) => {
   const normalized = String(value || "").trim();

@@ -693,6 +693,10 @@ function App() {
   }
 
   const handleWorkDelete = (workId) => {
+    if (!window.confirm('删除后将从当前时间线隐藏这张作品，确认继续吗？')) {
+      return
+    }
+
     setHiddenWorkIds((current) =>
       current.includes(workId) ? current : [...current, workId],
     )
@@ -749,6 +753,7 @@ function App() {
                 mediaFilter,
                 actionFilter,
                 generatedWorks.length,
+                hiddenWorkIds.length,
               ].join('|')}
             />
 

@@ -35,6 +35,28 @@ const SOFT_REWRITE_RULES = [
 
 const DOUBAO_SENSITIVE_ERROR_PATTERN =
   /(sensitive information|sensitive content|敏感信息|内容安全|安全策略|input text may contain sensitive)/iu;
+const WHITELIST_TERMS = [
+  "龙",
+  "青龙",
+  "白龙",
+  "黑龙",
+  "巨龙",
+  "飞龙",
+  "神龙",
+  "凤凰",
+  "朱雀",
+  "玄武",
+  "麒麟",
+  "独角兽",
+  "天马",
+  "鲲",
+  "老虎",
+  "狮子",
+  "熊猫",
+  "孔雀",
+  "仙鹤",
+].sort((left, right) => right.length - left.length);
+const WHITELIST_TOKEN_PREFIX = "__SAFE_TERM_";
 const FIELD_MAX_LENGTHS = {
   title: 50,
   subtitle: 200,
@@ -42,12 +64,43 @@ const FIELD_MAX_LENGTHS = {
   customPrompt: 1000,
   negativePrompt: 300,
 };
+const DEFAULT_FILTER_FIELDS = ["title", "subtitle", "styleDesc", "customPrompt", "negativePrompt"];
 
 export const normalizeInputText = (value, maxLength = 1000) =>
   String(value || "")
     .trim()
     .replace(/\s+/g, " ")
     .slice(0, maxLength);
+
+const protectWhitelistedTerms = (text) => {
+  const tokenMap = new Map();
+  let protectedText = String(text || "");
+
+  for (const [index, term] of WHITELIST_TERMS.entries()) {
+    if (!protectedText.includes(term)) {
+      continue;
+    }
+
+    const token = `${WHITELIST_TOKEN_PREFIX}${index}__`;
+    protectedText = protectedText.replaceAll(term, token);
+    tokenMap.set(token, term);
+  }
+
+  return {
+    protectedText,
+    tokenMap,
+  };
+};
+
+const restoreWhitelistedTerms = (text, tokenMap = new Map()) => {
+  let restoredText = String(text || "");
+
+  for (const [token, term] of tokenMap.entries()) {
+    restoredText = restoredText.replaceAll(token, term);
+  }
+
+  return restoredText;
+};
 
 const collectMatches = (text, rules) => {
   const matches = [];
@@ -84,8 +137,9 @@ export const filterSensitiveText = (value, { maxLength = 1000, strict = false } 
     };
   }
 
-  const blocked = collectMatches(normalized, HARD_BLOCK_RULES);
-  let filteredValue = normalized;
+  const { protectedText, tokenMap } = protectWhitelistedTerms(normalized);
+  const blocked = collectMatches(protectedText, HARD_BLOCK_RULES);
+  let filteredValue = protectedText;
   const replacements = [];
 
   if (strict && blocked.length > 0) {
@@ -114,14 +168,13 @@ export const filterSensitiveText = (value, { maxLength = 1000, strict = false } 
   }
 
   return {
-    value: normalizeInputText(filteredValue, maxLength),
+    value: normalizeInputText(restoreWhitelistedTerms(filteredValue, tokenMap), maxLength),
     blocked,
     replacements,
   };
 };
 
-export const filterSensitivePayload = (payload = {}, { strict = false } = {}) => {
-  const fields = ["title", "subtitle", "styleDesc", "customPrompt", "negativePrompt"];
+export const filterSensitivePayload = (payload = {}, { strict = false, fields = DEFAULT_FILTER_FIELDS } = {}) => {
   const sanitized = { ...payload };
   const blocked = [];
   const replacements = [];

@@ -72,6 +72,12 @@ export const getWorkPreviewSrc = (work) => {
 
 export const getWorkDownloadName = (work) => {
   const baseName = sanitizeFileName(work?.headline || work?.prompt || 'poster')
+  const previewSrc = getWorkPreviewSrc(work)
+
+  if (previewSrc.startsWith('data:image/svg+xml')) {
+    return `${baseName}.svg`
+  }
+
   return `${baseName}.png`
 }
 

@@ -8,6 +8,7 @@ import { ApiError, createApiRouter, validateGeneratePayload, validateUploadedFil
 import { createApp, getStartupEnvDiagnostics } from "../server.js";
 import { createDoubaoRequestBody, generatePoster, resolveImageSize } from "../utils/doubao.js";
 import { buildPrompt } from "../utils/prompt-builder.js";
+import { filterSensitiveText } from "../utils/sensitive-filter.js";
 
 test("buildPrompt creates the default structured prompt", () => {
   const result = buildPrompt({
@@ -22,30 +23,30 @@ test("buildPrompt creates the default structured prompt", () => {
   });
 
   assert.equal(result.usedCustomPrompt, false);
-  assert.match(result.prompt, /请设计一张适用于正方形海报的节日视觉海报/);
   assert.match(result.prompt, /周年庆典/);
   assert.match(result.prompt, /欢迎全员参加/);
-  assert.match(result.prompt, /已上传 Logo/);
-  assert.match(result.prompt, /已上传参考图/);
+  assert.match(result.prompt, /喜庆热闹风格/);
+  assert.match(result.prompt, /节日主题视觉/);
+  assert.match(result.prompt, /为 Logo 预留/);
+  assert.match(result.prompt, /参考上传图片的配色和氛围/);
   assert.match(result.negativePrompt, /不要人物/);
   assert.equal(result.metadata.sizeTemplate, "正方形海报");
 });
 
-test("buildPrompt rewrites risky words in custom prompt and keeps a compact structure", () => {
+test("buildPrompt keeps custom prompt unchanged and avoids extra prompt scaffolding", () => {
   const result = buildPrompt({
     title: "内部通知",
-    customPrompt: "使用性感爆炸风格，蓝绿色为主色调。",
+    customPrompt: "蓝色的天空飞着一条龙",
     negativePrompt: "不要复杂背景",
     logoPosition: "top_left",
     logoUrl: "https://cdn.example.com/logo.png",
   });
 
   assert.equal(result.usedCustomPrompt, true);
-  assert.match(result.prompt, /^使用时尚强烈张力风格/);
-  assert.doesNotMatch(result.prompt, /性感|爆炸/);
-  assert.match(result.prompt, /请输出适用于竖版手机海报的培训视觉海报/);
-  assert.match(result.prompt, /左上角/);
+  assert.equal(result.prompt, "蓝色的天空飞着一条龙");
+  assert.doesNotMatch(result.prompt, /请输出适用于|Logo|参考图|专业传播|留白/);
   assert.equal(result.negativePrompt, "不要复杂背景");
+  assert.equal(result.metadata.logoPositionLabel, "左上角");
 });
 
 test("validateGeneratePayload rejects missing title", () => {
@@ -87,6 +88,25 @@ test("validateGeneratePayload rejects blocked sensitive prompt content", () => {
       error.code === "SENSITIVE_PROMPT" &&
       /Doubao 容易拦截/.test(error.message),
   );
+});
+
+test("filterSensitiveText preserves whitelisted mythical creature words", () => {
+  const result = filterSensitiveText("蓝色的天空飞着一条龙，远处还有凤凰", {
+    strict: false,
+  });
+
+  assert.equal(result.value, "蓝色的天空飞着一条龙，远处还有凤凰");
+  assert.deepEqual(result.blocked, []);
+  assert.deepEqual(result.replacements, []);
+});
+
+test("validateGeneratePayload accepts dragon prompts", () => {
+  const result = validateGeneratePayload({
+    title: "神话场景",
+    customPrompt: "蓝色的天空飞着一条龙",
+  });
+
+  assert.equal(result.customPrompt, "蓝色的天空飞着一条龙");
 });
 
 test("validateGeneratePayload rejects unexpected fields and non-string values", () => {
@@ -136,7 +156,7 @@ test("validateUploadedFile enforces logo size limit", () => {
   );
 });
 
-test("createDoubaoRequestBody includes negative prompt in the user message", () => {
+test("createDoubaoRequestBody appends negative prompt with a compact instruction", () => {
   const body = createDoubaoRequestBody({
     prompt: "生成海报",
     negativePrompt: "不要低清晰度",
@@ -148,7 +168,7 @@ test("createDoubaoRequestBody includes negative prompt in the user message", () 
   assert.equal(body.size, "1024x1792");
   assert.equal(body.sequential_image_generation, "disabled");
   assert.equal(body.stream, false);
-  assert.match(body.prompt, /不要低清晰度/);
+  assert.equal(body.prompt, "生成海报\n避免：不要低清晰度");
 });
 
 test("createDoubaoRequestBody includes normalized reference images", () => {
