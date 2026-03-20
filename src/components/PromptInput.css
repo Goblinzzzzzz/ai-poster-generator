@@ -24,33 +24,33 @@
 }
 
 .prompt-panel {
-  width: min(920px, 100%);
+  width: min(550px, 100%);  /* 从 920px 缩小到 550px，约 60% */
   margin: 0 auto;
-  padding: 14px 16px 16px;
+  padding: 10px 12px 12px;  /* 从 14px 16px 16px 缩小 */
   border: 1px solid rgba(226, 232, 240, 0.92);
-  border-radius: 28px;
+  border-radius: 20px;  /* 从 28px 缩小 */
   background: rgba(255, 255, 255, 0.96);
   box-shadow:
-    0 28px 60px rgba(15, 23, 42, 0.08),
-    0 12px 24px rgba(15, 23, 42, 0.05);
+    0 18px 40px rgba(15, 23, 42, 0.08),
+    0 8px 16px rgba(15, 23, 42, 0.05);
   backdrop-filter: blur(18px);
 }
 
 .prompt-shortcuts {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 6px;  /* 从 10px 缩小 */
+  margin-bottom: 10px;  /* 从 14px 缩小 */
 }
 
 .prompt-shortcut {
-  min-height: 44px;
-  padding: 0.55rem 0.92rem;
+  min-height: 32px;  /* 从 44px 缩小到 32px */
+  padding: 0.4rem 0.65rem;  /* 从 0.55rem 0.92rem 缩小 */
   border: 1px solid rgba(226, 232, 240, 0.95);
   border-radius: 999px;
   background: #ffffff;
   color: var(--text-muted);
-  font-size: 0.86rem;
+  font-size: 0.75rem;  /* 从 0.86rem 缩小 */
   font-weight: 600;
   transition:
     border-color 0.2s ease,
@@ -66,13 +66,13 @@
 
 .prompt-textarea {
   width: 100%;
-  min-height: 88px;
-  padding: 4px 2px 10px;
+  min-height: 55px;  /* 从 88px 缩小到 55px，约 60% */
+  padding: 3px 2px 8px;  /* 从 4px 2px 10px 缩小 */
   border: 0;
   background: transparent;
   color: var(--text-main);
-  font-size: 1.08rem;
-  line-height: 1.85;
+  font-size: 0.9rem;  /* 从 1.08rem 缩小 */
+  line-height: 1.7;  /* 从 1.85 缩小 */
   resize: none;
 }
 
@@ -88,31 +88,31 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  margin-top: 4px;
+  gap: 12px;  /* 从 16px 缩小 */
+  margin-top: 3px;  /* 从 4px 略微缩小 */
 }
 
 .prompt-status {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: 6px 10px;  /* 从 8px 14px 缩小 */
   color: var(--text-soft);
-  font-size: 0.84rem;
+  font-size: 0.72rem;  /* 从 0.84rem 缩小 */
 }
 
 .prompt-submit {
   display: inline-flex;
-  min-height: 48px;
+  min-height: 36px;  /* 从 48px 缩小到 36px */
   align-items: center;
-  gap: 8px;
-  padding: 0.82rem 1.08rem;
+  gap: 6px;  /* 从 8px 缩小 */
+  padding: 0.6rem 0.8rem;  /* 从 0.82rem 1.08rem 缩小 */
   border: 0;
-  border-radius: 18px;
+  border-radius: 14px;  /* 从 18px 缩小 */
   background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
   color: #ffffff;
-  font-size: 0.95rem;
+  font-size: 0.8rem;  /* 从 0.95rem 缩小 */
   font-weight: 700;
-  box-shadow: 0 18px 30px rgba(37, 99, 235, 0.24);
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.24);  /* 从 18px 30px 缩小 */
 }
 
 .prompt-submit:disabled {
@@ -122,12 +122,12 @@
 
 .prompt-submit-icon {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 18px;  /* 从 22px 缩小 */
+  height: 18px;  /* 从 22px 缩小 */
   place-items: center;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.18);
-  font-size: 1rem;
+  font-size: 0.85rem;  /* 从 1rem 缩小 */
   line-height: 1;
 }
 
@@ -138,14 +138,14 @@
   }
 
   .prompt-panel {
-    padding: 14px;
-    border-radius: 24px;
+    padding: 10px;  /* 从 14px 缩小 */
+    border-radius: 16px;  /* 从 24px 缩小 */
   }
 
   .prompt-textarea {
-    min-height: 112px;
-    font-size: 1rem;
-    line-height: 1.7;
+    min-height: 65px;  /* 从 112px 缩小到 65px */
+    font-size: 0.85rem;  /* 从 1rem 缩小 */
+    line-height: 1.6;  /* 从 1.7 缩小 */
   }
 
   .prompt-footer {
