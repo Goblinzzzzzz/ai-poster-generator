@@ -656,13 +656,6 @@ function App() {
           timeFilter={timeFilter}
           onTimeFilterChange={setTimeFilter}
           timeOptions={TIME_FILTER_OPTIONS}
-          mediaFilter={mediaFilter}
-          onMediaFilterChange={setMediaFilter}
-          mediaOptions={MEDIA_FILTER_OPTIONS}
-          actionFilter={actionFilter}
-          onActionFilterChange={setActionFilter}
-          actionOptions={ACTION_FILTER_OPTIONS}
-          resultCount={works.length}
         />
 
         <div className="workspace-scroll">
