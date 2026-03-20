@@ -1,8 +1,26 @@
-.prompt-dock {
-  position: sticky;
+/* 旧 class，保留以防缓存 */
+.prompt-input-fixed {
+  position: fixed;
   bottom: 24px;
-  z-index: 15;
-  margin-top: 18px;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* 新 class - 移到最外层使用 */
+.prompt-input-viewport {
+  position: fixed;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  z-index: 200;  /* 高于 MobileNav (35) 和 TopBar (20) */
+  pointer-events: none;
+}
+
+.prompt-dock {
+  width: 100%;
+  pointer-events: auto;
 }
 
 .prompt-panel {
@@ -114,7 +132,8 @@
 }
 
 @media (max-width: 860px) {
-  .prompt-dock {
+  .prompt-input-fixed,
+  .prompt-input-viewport {
     bottom: calc(16px + var(--mobile-nav-safe-offset));
   }
 

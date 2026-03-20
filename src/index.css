@@ -78,6 +78,7 @@ button {
   min-width: 0;
   flex: 1;
   flex-direction: column;
+  height: 100vh;
 }
 
 .workspace-scroll {

@@ -1,5 +1,5 @@
 .timeline-feed {
-  padding: 26px 4px 170px;
+  padding: 26px 4px calc(160px + 24px);
 }
 
 .timeline-feed-header {
@@ -118,6 +118,7 @@
   color: #ffffff;
   font-size: 0.92rem;
   font-weight: 700;
+  cursor: pointer;
   box-shadow: 0 16px 28px rgba(37, 99, 235, 0.2);
 }
 
@@ -138,6 +139,7 @@
   font-size: 0.88rem;
   line-height: 1.6;
   text-align: left;
+  cursor: pointer;
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease,
@@ -158,7 +160,7 @@
 
 @media (max-width: 860px) {
   .timeline-feed {
-    padding: 20px 0 calc(190px + var(--mobile-nav-safe-offset));
+    padding: 20px 0 160px;
   }
 
   .timeline-feed-header {

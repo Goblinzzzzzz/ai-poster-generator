@@ -690,20 +690,23 @@ function App() {
                 hiddenWorkIds.length,
               ].join('|')}
             />
-
-            <PromptInput
-              value={prompt}
-              onChange={setPrompt}
-              onSubmit={handleGenerate}
-              onRetry={handleRetryGenerate}
-              isGenerating={isGenerating}
-              error={error}
-              quickActions={QUICK_ACTIONS}
-              activeQuickAction={activeQuickAction}
-              onQuickActionChange={setActiveQuickAction}
-            />
           </div>
         </div>
+      </div>
+
+      {/* 输入框移到最外层，确保 fixed 定位相对于视口 */}
+      <div className="prompt-input-viewport">
+        <PromptInput
+          value={prompt}
+          onChange={setPrompt}
+          onSubmit={handleGenerate}
+          onRetry={handleRetryGenerate}
+          isGenerating={isGenerating}
+          error={error}
+          quickActions={QUICK_ACTIONS}
+          activeQuickAction={activeQuickAction}
+          onQuickActionChange={setActiveQuickAction}
+        />
       </div>
 
       <MobileNav
