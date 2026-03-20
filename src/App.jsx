@@ -60,18 +60,7 @@ const TIME_FILTER_OPTIONS = [
   { value: 'month', label: '近 30 天' },
 ]
 
-const MEDIA_FILTER_OPTIONS = [
-  { value: 'all', label: '全部类型' },
-  { value: '图像', label: '图像' },
-  { value: '视频', label: '视频' },
-]
 
-const ACTION_FILTER_OPTIONS = [
-  { value: 'all', label: '全部操作' },
-  { value: '生成', label: '生成' },
-  { value: '编辑', label: '编辑' },
-  { value: '延展', label: '延展' },
-]
 
 const TIME_BUCKET_DAY_OFFSETS = {
   today: 0,
@@ -378,8 +367,6 @@ function App() {
   const [error, setError] = useState(null)
   const [searchValue, setSearchValue] = useState('')
   const [timeFilter, setTimeFilter] = useState('all')
-  const [mediaFilter, setMediaFilter] = useState('all')
-  const [actionFilter, setActionFilter] = useState('all')
   const [activeQuickAction, setActiveQuickAction] = useState(QUICK_ACTIONS[0].id)
   const [generatedWorks, setGeneratedWorks] = useState([])
   const [hiddenWorkIds, setHiddenWorkIds] = useState([])
@@ -448,17 +435,11 @@ function App() {
           return false
         }
 
-        if (mediaFilter !== 'all' && work.mediaType !== mediaFilter) {
-          return false
-        }
 
-        if (actionFilter !== 'all' && work.actionType !== actionFilter) {
-          return false
-        }
 
         return matchesSearch(work, searchValue)
       }),
-    [actionFilter, allWorks, mediaFilter, searchValue, selectedView, timeFilter],
+    [allWorks, searchValue, selectedView, timeFilter],
   )
 
   const lightboxItems = useMemo(
@@ -677,8 +658,6 @@ function App() {
                 selectedView,
                 searchValue.trim().toLowerCase(),
                 timeFilter,
-                mediaFilter,
-                actionFilter,
                 generatedWorks.map((work) => `${work.id}:${work.status}`).join(','),
                 hiddenWorkIds.length,
               ].join('|')}
