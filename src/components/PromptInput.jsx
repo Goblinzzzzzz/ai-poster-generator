@@ -67,28 +67,28 @@ export default function PromptInput({
   onRetry,
   isGenerating,
   error,
-  quickActions,
-  activeQuickAction,
-  onQuickActionChange,
   referenceImage,
   onReferenceImageChange,
   onReferenceImageRemove,
   preferences,
   onPreferenceChange,
+  activeAssistActionId,
+  assistResult,
+  onAssistAction,
+  onAssistUndo,
+  onAssistDismiss,
 }) {
   const [selectedModeId, setSelectedModeId] = useState(MODE_OPTIONS[0].id)
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false)
   const [isPreferencePanelOpen, setIsPreferencePanelOpen] = useState(false)
-  const [isCapabilityPanelOpen, setIsCapabilityPanelOpen] = useState(false)
   const modeMenuRef = useRef(null)
   const preferencePanelRef = useRef(null)
-  const capabilityPanelRef = useRef(null)
   const uploadInputRef = useRef(null)
   const selectedMode =
     MODE_OPTIONS.find((mode) => mode.id === selectedModeId) ?? MODE_OPTIONS[0]
 
   useEffect(() => {
-    if (!isModeMenuOpen && !isPreferencePanelOpen && !isCapabilityPanelOpen) {
+    if (!isModeMenuOpen && !isPreferencePanelOpen) {
       return undefined
     }
 
@@ -109,20 +109,12 @@ export default function PromptInput({
         setIsPreferencePanelOpen(false)
       }
 
-      if (
-        isCapabilityPanelOpen &&
-        capabilityPanelRef.current &&
-        !capabilityPanelRef.current.contains(event.target)
-      ) {
-        setIsCapabilityPanelOpen(false)
-      }
     }
 
     const handleEscape = (event) => {
       if (event.key === 'Escape') {
         setIsModeMenuOpen(false)
         setIsPreferencePanelOpen(false)
-        setIsCapabilityPanelOpen(false)
       }
     }
 
@@ -133,12 +125,11 @@ export default function PromptInput({
       document.removeEventListener('pointerdown', handlePointerDown)
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [isCapabilityPanelOpen, isModeMenuOpen, isPreferencePanelOpen])
+  }, [isModeMenuOpen, isPreferencePanelOpen])
 
   const closeFloatingPanels = () => {
     setIsModeMenuOpen(false)
     setIsPreferencePanelOpen(false)
-    setIsCapabilityPanelOpen(false)
   }
 
   const handleKeyDown = (event) => {
@@ -194,18 +185,19 @@ export default function PromptInput({
         />
 
         <div className="prompt-toolbar">
-          <div className="prompt-shortcuts" aria-label="快捷模式">
-            {quickActions.map((action) => {
-              const isActive = action.id === activeQuickAction
+          <div className="prompt-strategy-bar" aria-label="主策略入口">
+            {ASSIST_ACTIONS.map((action) => {
+              const isBusy = activeAssistActionId === action.id
 
               return (
                 <button
                   key={action.id}
                   type="button"
-                  className={`prompt-shortcut${isActive ? ' is-active' : ''}`}
-                  onClick={() => onQuickActionChange(action.id)}
+                  className={`prompt-strategy-btn${isBusy ? ' is-active' : ''}`}
+                  onClick={() => onAssistAction(action.id)}
+                  disabled={Boolean(activeAssistActionId) || isGenerating}
                 >
-                  {action.label}
+                  {isBusy ? '处理中...' : action.label}
                 </button>
               )
             })}
@@ -381,41 +373,6 @@ export default function PromptInput({
               ) : null}
             </div>
 
-            <div className="prompt-capability-wrap" ref={capabilityPanelRef}>
-              <button
-                type="button"
-                className={`prompt-utility-btn${isCapabilityPanelOpen ? ' is-active' : ''}`}
-                aria-expanded={isCapabilityPanelOpen}
-                aria-controls="prompt-capability-panel"
-                onClick={() => {
-                  const nextOpen = !isCapabilityPanelOpen
-                  closeFloatingPanels()
-                  setIsCapabilityPanelOpen(nextOpen)
-                }}
-              >
-                <span>更多</span>
-              </button>
-
-              {isCapabilityPanelOpen ? (
-                <div
-                  id="prompt-capability-panel"
-                  className="prompt-floating-panel prompt-capability-panel"
-                >
-                  <div className="prompt-capability-list">
-                    {ASSIST_ACTIONS.map((action) => (
-                      <button
-                        key={action.id}
-                        type="button"
-                        className="prompt-capability-btn"
-                      >
-                        {action.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
             <button
               type="button"
               className="prompt-submit"
@@ -446,6 +403,38 @@ export default function PromptInput({
                 删除
               </button>
             </article>
+          </div>
+        ) : null}
+
+        {assistResult ? (
+          <div className={`prompt-assist-feedback is-${assistResult.tone || 'info'}`}>
+            <div className="prompt-assist-feedback-copy">
+              <strong>{assistResult.title}</strong>
+              <p>{assistResult.summary}</p>
+              {assistResult.generatedText ? (
+                <div className="prompt-assist-feedback-text">
+                  {assistResult.generatedText}
+                </div>
+              ) : null}
+            </div>
+            <div className="prompt-assist-feedback-actions">
+              {assistResult.canUndo ? (
+                <button
+                  type="button"
+                  className="prompt-assist-feedback-btn"
+                  onClick={onAssistUndo}
+                >
+                  恢复上一步
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="prompt-assist-feedback-btn"
+                onClick={onAssistDismiss}
+              >
+                收起
+              </button>
+            </div>
           </div>
         ) : null}
 

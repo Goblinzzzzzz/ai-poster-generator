@@ -8,6 +8,11 @@ import TopBar from './components/TopBar'
 import PromptInput from './components/PromptInput'
 import { POSTER_API_URL } from './config'
 import { downloadWorkImage } from './utils/download'
+import {
+  buildReferenceIdea,
+  enhanceScenePrompt,
+  optimizePromptCopy,
+} from './utils/promptAssist'
 
 const DEFAULT_NEGATIVE_PROMPT =
   '文字、数字、水印、签名、尺寸标注、模糊、低清晰度、杂乱、过曝、欠曝、噪点、重复元素、压缩痕迹、锯齿边缘'
@@ -42,13 +47,6 @@ const NAV_ITEMS = [
     label: '画布',
     description: '查看版式与延展草稿',
   },
-]
-
-const QUICK_ACTIONS = [
-  { id: 'agent', label: 'Agent 模式' },
-  { id: 'auto', label: '自动' },
-  { id: 'search', label: '灵感搜索' },
-  { id: 'design', label: '创意设计' },
 ]
 
 const DEFAULT_GENERATION_PREFERENCES = Object.freeze({
@@ -314,14 +312,14 @@ const matchesSearch = (work, query) => {
   return searchableText.includes(normalizedQuery)
 }
 
-const buildStyleDescriptor = (quickAction, preferences) => {
+const buildStyleDescriptor = (preferences) => {
   const ratioLabel =
     SIZE_TEMPLATE_META[preferences.aspectRatio]?.label || SIZE_TEMPLATE_META.mobile.label
 
-  return `极简白色卡片式海报，${quickAction.label}，${ratioLabel} 构图，干净版式，品牌视觉感`
+  return `极简白色卡片式海报，${ratioLabel} 构图，主体突出，干净版式，品牌视觉感`
 }
 
-const createGeneratingWork = (prompt, quickAction, requestOptions) => {
+const createGeneratingWork = (prompt, requestOptions) => {
   const now = new Date()
   const sortTimestamp = now.getTime()
   const selectedSizeTemplate =
@@ -341,7 +339,7 @@ const createGeneratingWork = (prompt, quickAction, requestOptions) => {
     mediaKind: 'image',
     actionType: '生成',
     headline: buildTitleFromPrompt(prompt) || '即时创作',
-    tone: `${quickAction.label} · 生成中`,
+    tone: '主策略 · 生成中',
     sortTimestamp,
     surface:
       'linear-gradient(160deg, #f8fbff 0%, #ebf2ff 48%, #d9e7ff 100%)',
@@ -350,12 +348,42 @@ const createGeneratingWork = (prompt, quickAction, requestOptions) => {
   }
 }
 
-const createGeneratedWork = (pendingWork, imageSrc, quickAction) => ({
+const createGeneratedWork = (pendingWork, imageSrc) => ({
   ...pendingWork,
   status: 'ready',
   imageSrc,
-  tone: `${quickAction.label} · 最新生成`,
+  tone: '主策略 · 最新生成',
 })
+
+const getReferenceImageMeta = (reference) =>
+  new Promise((resolve) => {
+    if (!reference?.previewUrl) {
+      resolve(null)
+      return
+    }
+
+    const image = new window.Image()
+    image.onload = () => {
+      const width = Number(image.naturalWidth || 0)
+      const height = Number(image.naturalHeight || 0)
+      const orientation =
+        width > height ? 'landscape' : height > width ? 'portrait' : 'square'
+
+      resolve({
+        width,
+        height,
+        orientation,
+        orientationLabel:
+          orientation === 'portrait'
+            ? '竖版参考图'
+            : orientation === 'landscape'
+              ? '横版参考图'
+              : '方形参考图',
+      })
+    }
+    image.onerror = () => resolve(null)
+    image.src = reference.previewUrl
+  })
 
 const resolveWorkTimestamp = (work) => {
   if (typeof work.sortTimestamp === 'number') {
@@ -404,7 +432,6 @@ function App() {
   const [error, setError] = useState(null)
   const [searchValue, setSearchValue] = useState('')
   const [timeFilter, setTimeFilter] = useState('all')
-  const [activeQuickAction, setActiveQuickAction] = useState(QUICK_ACTIONS[0].id)
   const [referenceImage, setReferenceImage] = useState(null)
   const [generationPreferences, setGenerationPreferences] = useState(
     DEFAULT_GENERATION_PREFERENCES,
@@ -412,10 +439,9 @@ function App() {
   const [generatedWorks, setGeneratedWorks] = useState([])
   const [hiddenWorkIds, setHiddenWorkIds] = useState([])
   const [lightboxWorkId, setLightboxWorkId] = useState(null)
+  const [assistResult, setAssistResult] = useState(null)
+  const [activeAssistActionId, setActiveAssistActionId] = useState('')
   const referenceImageRef = useRef(referenceImage)
-
-  const activeQuickActionConfig =
-    QUICK_ACTIONS.find((action) => action.id === activeQuickAction) || QUICK_ACTIONS[0]
   const activeView =
     NAV_ITEMS.find((item) => item.id === selectedView) || NAV_ITEMS[1]
 
@@ -538,16 +564,16 @@ function App() {
       return
     }
 
-    const quickAction = activeQuickActionConfig
     const requestOptions = {
       preferences: { ...generationPreferences },
       referenceImageName: referenceImage?.file.name || '',
     }
-    const pendingWork = createGeneratingWork(trimmedPrompt, quickAction, requestOptions)
+    const pendingWork = createGeneratingWork(trimmedPrompt, requestOptions)
 
     setSelectedView('generate')
     setIsGenerating(true)
     setError(null)
+    setAssistResult(null)
     setGeneratedWorks((current) => [pendingWork, ...current])
 
     try {
@@ -558,7 +584,7 @@ function App() {
       formData.append('clarity', generationPreferences.clarity)
       formData.append('autoEnhance', String(generationPreferences.autoEnhance))
       formData.append('title', buildTitleFromPrompt(trimmedPrompt))
-      formData.append('styleDesc', buildStyleDescriptor(quickAction, generationPreferences))
+      formData.append('styleDesc', buildStyleDescriptor(generationPreferences))
       formData.append('customPrompt', trimmedPrompt)
       formData.append('negativePrompt', DEFAULT_NEGATIVE_PROMPT)
       formData.append('logoPosition', 'auto')
@@ -598,9 +624,7 @@ function App() {
 
       setTimeFilter('today')
       setGeneratedWorks((current) =>
-        current.map((work) =>
-          work.id === pendingWork.id ? createGeneratedWork(work, nextImage, quickAction) : work,
-        ),
+        current.map((work) => (work.id === pendingWork.id ? createGeneratedWork(work, nextImage) : work)),
       )
       setPrompt('')
     } catch (requestError) {
@@ -724,6 +748,7 @@ function App() {
       file,
       previewUrl: URL.createObjectURL(file),
     })
+    setAssistResult(null)
     setError(null)
   }
 
@@ -733,6 +758,94 @@ function App() {
     }
 
     setReferenceImage(null)
+    setAssistResult(null)
+  }
+
+  const handleAssistAction = async (actionId) => {
+    if (isGenerating || activeAssistActionId) {
+      return
+    }
+
+    setError(null)
+    setActiveAssistActionId(actionId)
+
+    try {
+      let nextResult = null
+
+      if (actionId === 'scene') {
+        nextResult = enhanceScenePrompt(prompt)
+      } else if (actionId === 'copy') {
+        nextResult = optimizePromptCopy(prompt)
+      } else if (actionId === 'reference') {
+        const referenceMeta =
+          (await getReferenceImageMeta(referenceImage)) ||
+          (referenceImage
+            ? {
+                orientation: 'square',
+                orientationLabel: '参考图',
+              }
+            : null)
+        nextResult = buildReferenceIdea({
+          prompt,
+          referenceMeta,
+        })
+      }
+
+      if (!nextResult) {
+        return
+      }
+
+      if (!nextResult.ok) {
+        setAssistResult({
+          ...nextResult,
+          tone: 'warning',
+          canUndo: false,
+        })
+        return
+      }
+
+      const previousPrompt = prompt
+      const nextPrompt =
+        nextResult.mode === 'append'
+          ? [prompt.trim(), nextResult.generatedText].filter(Boolean).join('\n')
+          : nextResult.prompt
+
+      setPrompt(nextPrompt)
+      setAssistResult({
+        ...nextResult,
+        tone: 'success',
+        previousPrompt,
+        appliedPrompt: nextPrompt,
+        canUndo: previousPrompt !== nextPrompt,
+      })
+      focusPromptInput()
+    } finally {
+      setActiveAssistActionId('')
+    }
+  }
+
+  const handleAssistUndo = () => {
+    if (!assistResult?.canUndo) {
+      return
+    }
+
+    setPrompt(assistResult.previousPrompt || '')
+    setAssistResult((current) =>
+      current
+        ? {
+            ...current,
+            title: '已恢复上一步',
+            summary: '已撤回刚才的策略回填。',
+            tone: 'info',
+            canUndo: false,
+          }
+        : current,
+    )
+    focusPromptInput()
+  }
+
+  const handleAssistDismiss = () => {
+    setAssistResult(null)
   }
 
   const handlePreferenceChange = (field, nextValue) => {
@@ -805,14 +918,16 @@ function App() {
           onRetry={handleRetryGenerate}
           isGenerating={isGenerating}
           error={error}
-          quickActions={QUICK_ACTIONS}
-          activeQuickAction={activeQuickAction}
-          onQuickActionChange={setActiveQuickAction}
           referenceImage={referenceImage}
           onReferenceImageChange={handleReferenceImageChange}
           onReferenceImageRemove={handleReferenceImageRemove}
           preferences={generationPreferences}
           onPreferenceChange={handlePreferenceChange}
+          activeAssistActionId={activeAssistActionId}
+          assistResult={assistResult}
+          onAssistAction={handleAssistAction}
+          onAssistUndo={handleAssistUndo}
+          onAssistDismiss={handleAssistDismiss}
         />
       </div>
 
