@@ -76,6 +76,81 @@ const getAspectRatioLabel = (value) =>
 const getClarityLabel = (value) =>
   CLARITY_OPTIONS.find((option) => option.value === value)?.label || '自动'
 
+function PlusIcon({ className = '' }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M10 4.167v11.666M4.167 10h11.666"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function ChevronDownIcon({ className = '' }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="m5.833 7.917 4.167 4.166 4.167-4.166"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function ArrowUpIcon({ className = '' }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M10 15V5m0 0L6.25 8.75M10 5l3.75 3.75"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function SparkIcon({ className = '' }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="m10 3.75 1.527 3.196 3.306.48-2.417 2.355.57 3.325L10 11.5l-2.986 1.606.57-3.325-2.417-2.355 3.306-.48L10 3.75Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export default function PromptInput({
   value,
   onChange,
@@ -93,8 +168,9 @@ export default function PromptInput({
   onAssistAction,
   onAssistUndo,
   onAssistDismiss,
+  selectedModeId,
+  onModeChange,
 }) {
-  const [selectedModeId, setSelectedModeId] = useState(MODE_OPTIONS[0].id)
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false)
   const [isPreferencePanelOpen, setIsPreferencePanelOpen] = useState(false)
   const modeMenuRef = useRef(null)
@@ -169,7 +245,7 @@ export default function PromptInput({
   }
 
   const handleModeSelect = (modeId) => {
-    setSelectedModeId(modeId)
+    onModeChange?.(modeId)
     setIsModeMenuOpen(false)
   }
 
@@ -186,53 +262,34 @@ export default function PromptInput({
   return (
     <div className="prompt-dock">
       <section className="prompt-panel" aria-label="创作输入框">
+        <div className="prompt-meta-row" aria-label="当前模式提示">
+          <span className="prompt-meta-mode">{selectedMode.label}</span>
+          <p className="prompt-meta-copy">{selectedMode.helper}</p>
+          <span className="prompt-meta-shortcut">Cmd/Ctrl + Enter</span>
+        </div>
+
+        {selectedMode.id === 'video' ? (
+          <div className="prompt-mode-note" role="status" aria-live="polite">
+            当前返回视频创意脚本、镜头描述和分镜建议，不直接生成视频文件。
+          </div>
+        ) : null}
+
         <label className="sr-only" htmlFor="jimeng-prompt-input">
           创作提示词
         </label>
 
-        <textarea
-          id="jimeng-prompt-input"
-          className="prompt-textarea"
-          placeholder={selectedMode.placeholder}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={4}
-        />
+        <div className="prompt-input-shell">
+          <textarea
+            id="jimeng-prompt-input"
+            className="prompt-textarea"
+            placeholder={selectedMode.placeholder}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={4}
+          />
 
-        <div className="prompt-toolbar">
-          <div className="prompt-strategy-bar" aria-label="主策略入口">
-            {ASSIST_ACTIONS.map((action) => {
-              const isBusy = activeAssistActionId === action.id
-              const helperText =
-                action.id === 'reference'
-                  ? referenceImage
-                    ? action.helperWithImage
-                    : action.helperWithoutImage
-                  : action.helper
-
-              return (
-                <button
-                  key={action.id}
-                  type="button"
-                  className={`prompt-strategy-btn prompt-strategy-btn--${action.id}${
-                    isBusy ? ' is-active' : ''
-                  }`}
-                  data-action={action.id}
-                  onClick={() => onAssistAction(action.id)}
-                  disabled={Boolean(activeAssistActionId) || isGenerating}
-                >
-                  <span className="prompt-strategy-copy">
-                    <strong>{isBusy ? '处理中...' : action.label}</strong>
-                    <small>{helperText}</small>
-                  </span>
-                  <span className="prompt-strategy-mode">{action.modeLabel}</span>
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="prompt-toolbar-actions">
+          <div className="prompt-input-footer">
             <div className="prompt-reference-wrap">
               <input
                 ref={uploadInputRef}
@@ -243,17 +300,58 @@ export default function PromptInput({
               />
               <button
                 type="button"
-                className={`prompt-utility-btn${referenceImage ? ' is-active' : ''}`}
+                className={`prompt-reference-entry${referenceImage ? ' is-active' : ''}`}
                 onClick={() => uploadInputRef.current?.click()}
+                aria-label={referenceImage ? '更换参考图' : '上传参考图'}
               >
-                <span>{referenceImage ? '参考图已添加' : '上传参考图'}</span>
+                <span className="prompt-reference-entry-media" aria-hidden="true">
+                  {referenceImage ? (
+                    <img src={referenceImage.previewUrl} alt="" />
+                  ) : (
+                    <PlusIcon className="prompt-reference-entry-icon" />
+                  )}
+                </span>
+                <span className="prompt-reference-entry-copy">
+                  <strong>{referenceImage ? '参考图已添加' : '参考图'}</strong>
+                  <small>
+                    {referenceImage ? '点击更换图片' : '添加构图或风格参考'}
+                  </small>
+                </span>
               </button>
             </div>
 
+            <button
+              type="button"
+              className="prompt-submit"
+              onClick={handleSubmit}
+              disabled={isGenerating}
+              aria-busy={isGenerating}
+              aria-label={
+                isGenerating
+                  ? selectedMode.generatingLabel
+                  : selectedMode.submitLabel
+              }
+              title={
+                isGenerating
+                  ? selectedMode.generatingLabel
+                  : selectedMode.submitLabel
+              }
+            >
+              <ArrowUpIcon
+                className={`prompt-submit-icon${isGenerating ? ' is-busy' : ''}`}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div className="prompt-toolbar">
+          <div className="prompt-toolbar-group">
             <div className="prompt-mode-wrap" ref={modeMenuRef}>
               <button
                 type="button"
-                className={`prompt-utility-btn${isModeMenuOpen ? ' is-active' : ''}`}
+                className={`prompt-utility-btn prompt-utility-btn--dropdown${
+                  isModeMenuOpen ? ' is-active' : ''
+                }`}
                 aria-expanded={isModeMenuOpen}
                 aria-controls="prompt-mode-menu"
                 onClick={() => {
@@ -262,10 +360,11 @@ export default function PromptInput({
                   setIsModeMenuOpen(nextOpen)
                 }}
               >
-                <span>模式</span>
-                <span className="prompt-utility-summary">
-                  {selectedMode.shortLabel}
+                <span className="prompt-utility-copy">
+                  <strong>模式</strong>
+                  <small>{selectedMode.shortLabel}</small>
                 </span>
+                <ChevronDownIcon className="prompt-utility-icon" />
               </button>
 
               {isModeMenuOpen ? (
@@ -303,7 +402,9 @@ export default function PromptInput({
             <div className="prompt-preference-wrap" ref={preferencePanelRef}>
               <button
                 type="button"
-                className={`prompt-utility-btn${isPreferencePanelOpen ? ' is-active' : ''}`}
+                className={`prompt-utility-btn prompt-utility-btn--dropdown${
+                  isPreferencePanelOpen ? ' is-active' : ''
+                }`}
                 aria-expanded={isPreferencePanelOpen}
                 aria-controls="prompt-preference-panel"
                 onClick={() => {
@@ -312,11 +413,14 @@ export default function PromptInput({
                   setIsPreferencePanelOpen(nextOpen)
                 }}
               >
-                <span>偏好</span>
-                <span className="prompt-utility-summary">
-                  {getAspectRatioLabel(preferences.aspectRatio)} /{' '}
-                  {getClarityLabel(preferences.clarity)}
+                <span className="prompt-utility-copy">
+                  <strong>偏好</strong>
+                  <small>
+                    {getAspectRatioLabel(preferences.aspectRatio)} /{' '}
+                    {getClarityLabel(preferences.clarity)}
+                  </small>
                 </span>
+                <ChevronDownIcon className="prompt-utility-icon" />
               </button>
 
               {isPreferencePanelOpen ? (
@@ -401,16 +505,27 @@ export default function PromptInput({
                 </div>
               ) : null}
             </div>
+          </div>
 
-            <button
-              type="button"
-              className="prompt-submit"
-              onClick={handleSubmit}
-              disabled={isGenerating}
-              aria-busy={isGenerating}
-            >
-              {isGenerating ? selectedMode.generatingLabel : selectedMode.submitLabel}
-            </button>
+          <div className="prompt-strategy-bar" aria-label="主策略入口">
+            {ASSIST_ACTIONS.map((action) => {
+              const isBusy = activeAssistActionId === action.id
+
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  className={`prompt-strategy-btn${
+                    isBusy ? ' is-active' : ''
+                  }`}
+                  onClick={() => onAssistAction(action.id)}
+                  disabled={Boolean(activeAssistActionId) || isGenerating}
+                >
+                  <SparkIcon className="prompt-strategy-icon" />
+                  <span>{isBusy ? '处理中...' : action.label}</span>
+                </button>
+              )
+            })}
           </div>
         </div>
 
