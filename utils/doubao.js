@@ -6,6 +6,7 @@ import {
   normalizeEnvValue,
   resolveDoubaoApiKey,
 } from "./env.js";
+import { resolveParameterMapping } from "./parameter-mapping.js";
 import { isDoubaoSensitiveError } from "./sensitive-filter.js";
 
 // 默认端点和模型仅作为 fallback，优先使用环境变量
@@ -20,14 +21,6 @@ const DATA_URL_PATTERN = /^data:image\/[a-zA-Z0-9.+-]+;base64,/i;
 const HTTP_URL_PATTERN = /^https?:\/\//i;
 const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const DEBUG_SCOPE = "[utils/doubao.js]";
-
-const SIZE_TEMPLATES = {
-  mobile: [1080, 1920],
-  a4: [2480, 3508],
-  wechat_cover: [900, 383],
-  wechat_sub: [900, 500],
-  weibo: [1000, 1000],
-};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -83,19 +76,8 @@ const normalizeModel = (value) => {
   return trimmed;
 };
 
-const clampImageSize = (width, height, maxSide = 1792) => {
-  const longestSide = Math.max(width, height);
-  const scale = maxSide / longestSide;
-  const normalizedWidth = Math.max(256, Math.round((width * scale) / 32) * 32);
-  const normalizedHeight = Math.max(256, Math.round((height * scale) / 32) * 32);
-
-  return `${normalizedWidth}x${normalizedHeight}`;
-};
-
-export const resolveImageSize = (sizeTemplate = "mobile") => {
-  const preset = SIZE_TEMPLATES[String(sizeTemplate || "").trim()] || SIZE_TEMPLATES.mobile;
-  return clampImageSize(preset[0], preset[1]);
-};
+export const resolveImageSize = (sizeTemplate = "mobile", clarity = "high") =>
+  resolveParameterMapping({ sizeTemplate, clarity }).providerRequest.size;
 
 const readMessageContent = (content) => {
   if (typeof content === "string") {
@@ -168,6 +150,8 @@ export const createDoubaoRequestBody = ({
   negativePrompt = "",
   model = DEFAULT_MODEL,
   sizeTemplate = "mobile",
+  size = "",
+  clarity = "high",
   responseFormat = "b64_json",
   referenceImages = [],
 }) => {
@@ -179,7 +163,7 @@ export const createDoubaoRequestBody = ({
     model: normalizeModel(model),
     prompt: buildGenerationPrompt({ prompt, negativePrompt }),
     response_format: responseFormat,
-    size: resolveImageSize(sizeTemplate),
+    size: String(size || "").trim() || resolveImageSize(sizeTemplate, clarity),
     sequential_image_generation: "disabled",
     stream: false,
     watermark: false,
@@ -330,6 +314,8 @@ export const generatePoster = async ({
   endpoint = normalizeEnvValue(process.env.DOUBAO_API_ENDPOINT) || DEFAULT_ENDPOINT,
   model = normalizeEnvValue(process.env.DOUBAO_MODEL) || DEFAULT_MODEL,
   sizeTemplate = "mobile",
+  size = "",
+  clarity = "high",
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxRetries = DEFAULT_MAX_RETRIES,
   fetchImpl = globalThis.fetch,
@@ -350,6 +336,8 @@ export const generatePoster = async ({
     endpointDiagnostics,
     model,
     sizeTemplate,
+    size,
+    clarity,
     timeoutMs,
     maxRetries,
   });
@@ -364,6 +352,8 @@ export const generatePoster = async ({
     endpointDiagnostics,
     model,
     sizeTemplate,
+    size,
+    clarity,
   });
 
   if (!prompt) {
@@ -398,6 +388,8 @@ export const generatePoster = async ({
         negativePrompt,
         model,
         sizeTemplate,
+        size,
+        clarity,
         referenceImages,
       });
 

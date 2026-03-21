@@ -4,6 +4,12 @@ import { extname, join } from "node:path";
 
 import { generatePoster } from "../utils/doubao.js";
 import { describeEnvValue, normalizeEnvValue } from "../utils/env.js";
+import {
+  getSupportedClarityValues,
+  isSupportedAspectRatio,
+  isSupportedClarity,
+  normalizeAutoEnhance,
+} from "../utils/parameter-mapping.js";
 import { buildPrompt, normalizePromptInput } from "../utils/prompt-builder.js";
 import {
   createSensitivePromptMessage,
@@ -31,6 +37,10 @@ const ALLOWED_LOGO_POSITIONS = new Set(["auto", "top_left", "top_right", "bottom
 const ALLOWED_GENERATE_FIELDS = new Set([
   "posterType",
   "sizeTemplate",
+  "aspectRatio",
+  "clarity",
+  "autoEnhance",
+  "mode",
   "title",
   "subtitle",
   "styleDesc",
@@ -41,6 +51,7 @@ const ALLOWED_GENERATE_FIELDS = new Set([
   "referenceImageUrl",
 ]);
 const HTTP_URL_PROTOCOLS = new Set(["http:", "https:"]);
+const BOOLEAN_GENERATE_FIELDS = new Set(["autoEnhance"]);
 const DEBUG_SCOPE = "[api/generate.js]";
 
 const getRequestDebugId = (request) => String(request?.posterRequestId || "no-request-id");
@@ -185,11 +196,42 @@ export const validateGeneratePayload = (payload = {}) => {
   for (const fieldName of ALLOWED_GENERATE_FIELDS) {
     const fieldValue = payload[fieldName];
 
-    if (fieldValue !== undefined && fieldValue !== null && typeof fieldValue !== "string") {
+    const isBooleanField = BOOLEAN_GENERATE_FIELDS.has(fieldName);
+    const hasValidType =
+      fieldValue === undefined ||
+      fieldValue === null ||
+      typeof fieldValue === "string" ||
+      (isBooleanField && typeof fieldValue === "boolean");
+
+    if (!hasValidType) {
       throw createApiError(400, "VALIDATION_ERROR", `${fieldName} 必须是字符串。`, {
         field: fieldName,
       });
     }
+  }
+
+  const rawAspectRatio = normalizeInputText(payload.aspectRatio, 40);
+  const rawSizeTemplate = normalizeInputText(payload.sizeTemplate, 40);
+  const rawClarity = normalizeInputText(payload.clarity, 40).toLowerCase();
+
+  if (rawAspectRatio && !isSupportedAspectRatio(rawAspectRatio)) {
+    throw createApiError(400, "VALIDATION_ERROR", "aspectRatio 无效。", {
+      field: "aspectRatio",
+    });
+  }
+
+  if (rawSizeTemplate && !ALLOWED_SIZE_TEMPLATES.has(rawSizeTemplate) && !isSupportedAspectRatio(rawSizeTemplate)) {
+    throw createApiError(400, "VALIDATION_ERROR", "sizeTemplate 无效。", {
+      field: "sizeTemplate",
+      allowedValues: Array.from(ALLOWED_SIZE_TEMPLATES),
+    });
+  }
+
+  if (rawClarity && !isSupportedClarity(rawClarity)) {
+    throw createApiError(400, "VALIDATION_ERROR", "clarity 无效。", {
+      field: "clarity",
+      allowedValues: getSupportedClarityValues(),
+    });
   }
 
   const normalized = normalizePromptInput(payload);
@@ -218,10 +260,23 @@ export const validateGeneratePayload = (payload = {}) => {
     });
   }
 
+  if (!isSupportedAspectRatio(filteredPayload.aspectRatio)) {
+    throw createApiError(400, "VALIDATION_ERROR", "aspectRatio 无效。", {
+      field: "aspectRatio",
+    });
+  }
+
   if (!ALLOWED_SIZE_TEMPLATES.has(filteredPayload.sizeTemplate)) {
     throw createApiError(400, "VALIDATION_ERROR", "sizeTemplate 无效。", {
       field: "sizeTemplate",
       allowedValues: Array.from(ALLOWED_SIZE_TEMPLATES),
+    });
+  }
+
+  if (!getSupportedClarityValues().includes(filteredPayload.clarity)) {
+    throw createApiError(400, "VALIDATION_ERROR", "clarity 无效。", {
+      field: "clarity",
+      allowedValues: getSupportedClarityValues(),
     });
   }
 
@@ -256,6 +311,8 @@ export const validateGeneratePayload = (payload = {}) => {
       });
     }
   }
+
+  filteredPayload.autoEnhance = normalizeAutoEnhance(filteredPayload.autoEnhance, true);
 
   return filteredPayload;
 };
@@ -515,7 +572,9 @@ export const createApiRouter = ({
       const generationResult = await generatePosterImpl({
         prompt: promptResult.prompt,
         negativePrompt: promptResult.negativePrompt,
-        sizeTemplate: normalizedPayload.sizeTemplate,
+        sizeTemplate: promptResult.parameterMapping.providerRequest.sizeTemplate,
+        size: promptResult.parameterMapping.providerRequest.size,
+        clarity: promptResult.parameterMapping.clarity.effective,
         apiKey: normalizedApiKey,
         referenceImages,
         requestId,
@@ -537,6 +596,8 @@ export const createApiRouter = ({
           negativePrompt: promptResult.negativePrompt,
           provider: generationResult.provider,
           attempts: generationResult.attempts,
+          promptSpec: promptResult.promptSpec,
+          effectiveProfile: promptResult.parameterMapping.effectiveProfile,
           uploads: {
             logoUrl,
             referenceImageUrl,

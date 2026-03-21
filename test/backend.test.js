@@ -13,7 +13,7 @@ import { filterSensitiveText } from "../utils/sensitive-filter.js";
 test("buildPrompt creates the default structured prompt", () => {
   const result = buildPrompt({
     posterType: "festival",
-    sizeTemplate: "weibo",
+    aspectRatio: "weibo",
     title: "周年庆典",
     subtitle: "欢迎全员参加",
     styleDesc: "喜庆热闹",
@@ -25,28 +25,51 @@ test("buildPrompt creates the default structured prompt", () => {
   assert.equal(result.usedCustomPrompt, false);
   assert.match(result.prompt, /周年庆典/);
   assert.match(result.prompt, /欢迎全员参加/);
-  assert.match(result.prompt, /喜庆热闹风格/);
-  assert.match(result.prompt, /节日主题视觉/);
-  assert.match(result.prompt, /为 Logo 预留/);
-  assert.match(result.prompt, /参考上传图片的配色和氛围/);
+  assert.match(result.prompt, /喜庆热闹/);
+  assert.match(result.prompt, /参考上传图片的配色与氛围/);
+  assert.match(result.prompt, /中心构图|保留排版留白/);
   assert.match(result.negativePrompt, /不要人物/);
+  assert.equal(result.metadata.aspectRatioLabel, "1:1");
+  assert.equal(result.metadata.effectiveClarity, "high");
   assert.equal(result.metadata.sizeTemplate, "正方形海报");
 });
 
-test("buildPrompt keeps custom prompt unchanged and avoids extra prompt scaffolding", () => {
+test("buildPrompt keeps custom prompt unchanged when autoEnhance is disabled", () => {
   const result = buildPrompt({
     title: "内部通知",
     customPrompt: "蓝色的天空飞着一条龙",
     negativePrompt: "不要复杂背景",
     logoPosition: "top_left",
     logoUrl: "https://cdn.example.com/logo.png",
+    autoEnhance: false,
   });
 
   assert.equal(result.usedCustomPrompt, true);
   assert.equal(result.prompt, "蓝色的天空飞着一条龙");
-  assert.doesNotMatch(result.prompt, /请输出适用于|Logo|参考图|专业传播|留白/);
+  assert.equal(result.metadata.autoEnhance, false);
   assert.equal(result.negativePrompt, "不要复杂背景");
   assert.equal(result.metadata.logoPositionLabel, "左上角");
+});
+
+test("buildPrompt enriches prompt spec when autoEnhance is enabled", () => {
+  const result = buildPrompt({
+    posterType: "brand",
+    aspectRatio: "16:9",
+    clarity: "auto",
+    autoEnhance: true,
+    title: "新品海报",
+    customPrompt: "高端护肤品海报，冰川蓝，高级感",
+  });
+
+  assert.equal(result.usedCustomPrompt, true);
+  assert.match(result.prompt, /高端护肤品/);
+  assert.match(result.prompt, /高端商业产品摄影|商业产品海报/);
+  assert.match(result.prompt, /横向展开画面/);
+  assert.match(result.prompt, /高细节表现/);
+  assert.equal(result.metadata.aspectRatioLabel, "16:9");
+  assert.equal(result.metadata.effectiveClarity, "high");
+  assert.equal(result.metadata.providerSize, "1792x1024");
+  assert.match(result.promptSpec.material, /玻璃|金属/);
 });
 
 test("buildPrompt ignores non-string customPrompt values instead of coercing them into object text", () => {
@@ -58,7 +81,7 @@ test("buildPrompt ignores non-string customPrompt values instead of coercing the
 
   assert.equal(result.usedCustomPrompt, false);
   assert.doesNotMatch(result.prompt, /\[object Object\]/);
-  assert.match(result.prompt, /品牌海报/);
+  assert.match(result.prompt, /品牌/);
 });
 
 test("validateGeneratePayload rejects missing title", () => {
@@ -84,6 +107,35 @@ test("validateGeneratePayload rejects unsupported enum values", () => {
       error.statusCode === 400 &&
       error.code === "VALIDATION_ERROR" &&
       /sizeTemplate 无效/.test(error.message),
+  );
+});
+
+test("validateGeneratePayload normalizes new generation preferences", () => {
+  const result = validateGeneratePayload({
+    title: "偏好映射测试",
+    aspectRatio: "16:9",
+    clarity: "auto",
+    autoEnhance: "false",
+  });
+
+  assert.equal(result.aspectRatio, "wechat_cover");
+  assert.equal(result.sizeTemplate, "wechat_cover");
+  assert.equal(result.clarity, "auto");
+  assert.equal(result.autoEnhance, false);
+});
+
+test("validateGeneratePayload rejects invalid aspectRatio", () => {
+  assert.throws(
+    () =>
+      validateGeneratePayload({
+        title: "错误比例",
+        aspectRatio: "21:9",
+      }),
+    (error) =>
+      error instanceof ApiError &&
+      error.statusCode === 400 &&
+      error.code === "VALIDATION_ERROR" &&
+      /aspectRatio 无效/.test(error.message),
   );
 });
 
@@ -220,7 +272,7 @@ test("createDoubaoRequestBody omits image when no reference images are provided"
 
 test("resolveImageSize keeps poster ratios within the supported range", () => {
   assert.equal(resolveImageSize("mobile"), "1024x1792");
-  assert.equal(resolveImageSize("wechat_cover"), "1792x768");
+  assert.equal(resolveImageSize("wechat_cover"), "1792x1024");
 });
 
 test("generatePoster rejects requests when API key is missing", async () => {
@@ -458,6 +510,96 @@ test("createApiRouter forwards the provided apiKey directly", async () => {
     assert.equal(response.statusCode, 200);
     assert.equal(receivedApiKey, "explicit-router-key");
     assert.equal(receivedRequestId, "req-test-123");
+  } finally {
+    rmSync(uploadDir, { recursive: true, force: true });
+  }
+});
+
+test("createApiRouter forwards mapped provider size and clarity from preferences", async () => {
+  const uploadDir = mkdtempSync(join(tmpdir(), "ai-poster-generator-test-"));
+  const routes = new Map();
+  let receivedPayload;
+
+  const Router = () => ({
+    post(path, ...handlers) {
+      routes.set(path, handlers);
+      return this;
+    },
+  });
+  const multerStub = Object.assign(
+    () => ({
+      fields: () => (_request, _response, next) => next(),
+    }),
+    {
+      diskStorage: () => ({}),
+    },
+  );
+
+  try {
+    createApiRouter({
+      Router,
+      multer: multerStub,
+      uploadDir,
+      apiKey: "explicit-router-key",
+      generatePosterImpl: async ({ sizeTemplate, size, clarity, prompt, negativePrompt }) => {
+        receivedPayload = { sizeTemplate, size, clarity, prompt, negativePrompt };
+        return {
+          imageUrl: "https://cdn.example.com/generated.png",
+          provider: "doubao-seed",
+          attempts: 1,
+        };
+      },
+    });
+
+    const [, , handleGenerate] = routes.get("/generate");
+    const request = {
+      posterRequestId: "req-mapped-prefs",
+      is: () => false,
+      files: {},
+      body: {
+        title: "参数映射测试",
+        posterType: "brand",
+        aspectRatio: "16:9",
+        clarity: "auto",
+        autoEnhance: "true",
+        customPrompt: "运动品牌春季海报，女生晨跑，干净有力量",
+      },
+      protocol: "https",
+      get(headerName) {
+        if (headerName === "host") {
+          return "poster.example.com";
+        }
+
+        return undefined;
+      },
+    };
+    const response = {
+      statusCode: 200,
+      payload: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.payload = payload;
+        return this;
+      },
+    };
+
+    let forwardedError;
+    await handleGenerate(request, response, (error) => {
+      forwardedError = error;
+    });
+
+    assert.equal(forwardedError, undefined);
+    assert.equal(receivedPayload.sizeTemplate, "wechat_cover");
+    assert.equal(receivedPayload.size, "1792x1024");
+    assert.equal(receivedPayload.clarity, "high");
+    assert.match(receivedPayload.prompt, /横向展开画面|保留左右叙事空间/);
+    assert.match(receivedPayload.negativePrompt, /低清晰度|压缩痕迹/);
+    assert.equal(response.payload?.data?.effectiveProfile?.effectiveClarity, "high");
+    assert.equal(response.payload?.data?.effectiveProfile?.size, "1792x1024");
+    assert.match(response.payload?.data?.promptSpec?.composition || "", /横向展开画面/);
   } finally {
     rmSync(uploadDir, { recursive: true, force: true });
   }

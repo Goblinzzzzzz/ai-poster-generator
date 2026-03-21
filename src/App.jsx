@@ -76,12 +76,6 @@ const SIZE_TEMPLATE_META = {
   },
 }
 
-const CLARITY_STYLE_HINTS = {
-  auto: '清晰度自动平衡',
-  standard: '标准清晰度',
-  high: '高清细节表现',
-}
-
 const MAX_REFERENCE_IMAGE_SIZE = 10 * 1024 * 1024
 
 const MOBILE_NAV_ITEMS = NAV_ITEMS
@@ -321,10 +315,10 @@ const matchesSearch = (work, query) => {
 }
 
 const buildStyleDescriptor = (quickAction, preferences) => {
-  const clarityHint = CLARITY_STYLE_HINTS[preferences.clarity] || CLARITY_STYLE_HINTS.auto
-  const autoHint = preferences.autoEnhance ? '自动优化构图与光效' : '减少自动润色'
+  const ratioLabel =
+    SIZE_TEMPLATE_META[preferences.aspectRatio]?.label || SIZE_TEMPLATE_META.mobile.label
 
-  return `极简白色卡片式海报，${quickAction.label}，${clarityHint}，${autoHint}`
+  return `极简白色卡片式海报，${quickAction.label}，${ratioLabel} 构图，干净版式，品牌视觉感`
 }
 
 const createGeneratingWork = (prompt, quickAction, requestOptions) => {
@@ -559,7 +553,10 @@ function App() {
     try {
       const formData = new FormData()
       formData.append('posterType', 'brand')
+      formData.append('aspectRatio', generationPreferences.aspectRatio)
       formData.append('sizeTemplate', generationPreferences.aspectRatio)
+      formData.append('clarity', generationPreferences.clarity)
+      formData.append('autoEnhance', String(generationPreferences.autoEnhance))
       formData.append('title', buildTitleFromPrompt(trimmedPrompt))
       formData.append('styleDesc', buildStyleDescriptor(quickAction, generationPreferences))
       formData.append('customPrompt', trimmedPrompt)
