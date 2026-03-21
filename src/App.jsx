@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import Lightbox from './components/Lightbox'
 import MobileNav from './components/MobileNav'
@@ -50,6 +50,39 @@ const QUICK_ACTIONS = [
   { id: 'search', label: '灵感搜索' },
   { id: 'design', label: '创意设计' },
 ]
+
+const DEFAULT_GENERATION_PREFERENCES = Object.freeze({
+  aspectRatio: 'mobile',
+  clarity: 'auto',
+  autoEnhance: true,
+})
+
+const SIZE_TEMPLATE_META = {
+  mobile: {
+    label: '9:16',
+    aspectRatio: '9 / 16',
+  },
+  wechat_cover: {
+    label: '16:9',
+    aspectRatio: '16 / 9',
+  },
+  weibo: {
+    label: '1:1',
+    aspectRatio: '1 / 1',
+  },
+  a4: {
+    label: '3:4',
+    aspectRatio: '3 / 4',
+  },
+}
+
+const CLARITY_STYLE_HINTS = {
+  auto: '清晰度自动平衡',
+  standard: '标准清晰度',
+  high: '高清细节表现',
+}
+
+const MAX_REFERENCE_IMAGE_SIZE = 10 * 1024 * 1024
 
 const MOBILE_NAV_ITEMS = NAV_ITEMS
 
@@ -287,9 +320,18 @@ const matchesSearch = (work, query) => {
   return searchableText.includes(normalizedQuery)
 }
 
-const createGeneratingWork = (prompt, quickAction) => {
+const buildStyleDescriptor = (quickAction, preferences) => {
+  const clarityHint = CLARITY_STYLE_HINTS[preferences.clarity] || CLARITY_STYLE_HINTS.auto
+  const autoHint = preferences.autoEnhance ? '自动优化构图与光效' : '减少自动润色'
+
+  return `极简白色卡片式海报，${quickAction.label}，${clarityHint}，${autoHint}`
+}
+
+const createGeneratingWork = (prompt, quickAction, requestOptions) => {
   const now = new Date()
   const sortTimestamp = now.getTime()
+  const selectedSizeTemplate =
+    SIZE_TEMPLATE_META[requestOptions.preferences.aspectRatio] || SIZE_TEMPLATE_META.mobile
 
   return {
     id: `generated-${sortTimestamp}`,
@@ -309,7 +351,8 @@ const createGeneratingWork = (prompt, quickAction) => {
     sortTimestamp,
     surface:
       'linear-gradient(160deg, #f8fbff 0%, #ebf2ff 48%, #d9e7ff 100%)',
-    aspectRatio: '4 / 5',
+    aspectRatio: selectedSizeTemplate.aspectRatio,
+    requestOptions,
   }
 }
 
@@ -368,14 +411,32 @@ function App() {
   const [searchValue, setSearchValue] = useState('')
   const [timeFilter, setTimeFilter] = useState('all')
   const [activeQuickAction, setActiveQuickAction] = useState(QUICK_ACTIONS[0].id)
+  const [referenceImage, setReferenceImage] = useState(null)
+  const [generationPreferences, setGenerationPreferences] = useState(
+    DEFAULT_GENERATION_PREFERENCES,
+  )
   const [generatedWorks, setGeneratedWorks] = useState([])
   const [hiddenWorkIds, setHiddenWorkIds] = useState([])
   const [lightboxWorkId, setLightboxWorkId] = useState(null)
+  const referenceImageRef = useRef(referenceImage)
 
   const activeQuickActionConfig =
     QUICK_ACTIONS.find((action) => action.id === activeQuickAction) || QUICK_ACTIONS[0]
   const activeView =
     NAV_ITEMS.find((item) => item.id === selectedView) || NAV_ITEMS[1]
+
+  useEffect(() => {
+    referenceImageRef.current = referenceImage
+  }, [referenceImage])
+
+  useEffect(
+    () => () => {
+      if (referenceImageRef.current?.previewUrl) {
+        URL.revokeObjectURL(referenceImageRef.current.previewUrl)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -484,7 +545,11 @@ function App() {
     }
 
     const quickAction = activeQuickActionConfig
-    const pendingWork = createGeneratingWork(trimmedPrompt, quickAction)
+    const requestOptions = {
+      preferences: { ...generationPreferences },
+      referenceImageName: referenceImage?.file.name || '',
+    }
+    const pendingWork = createGeneratingWork(trimmedPrompt, quickAction, requestOptions)
 
     setSelectedView('generate')
     setIsGenerating(true)
@@ -494,12 +559,16 @@ function App() {
     try {
       const formData = new FormData()
       formData.append('posterType', 'brand')
-      formData.append('sizeTemplate', 'mobile')
+      formData.append('sizeTemplate', generationPreferences.aspectRatio)
       formData.append('title', buildTitleFromPrompt(trimmedPrompt))
-      formData.append('styleDesc', `极简白色卡片式海报，${quickAction.label}`)
+      formData.append('styleDesc', buildStyleDescriptor(quickAction, generationPreferences))
       formData.append('customPrompt', trimmedPrompt)
       formData.append('negativePrompt', DEFAULT_NEGATIVE_PROMPT)
       formData.append('logoPosition', 'auto')
+
+      if (referenceImage?.file) {
+        formData.append('referenceImage', referenceImage.file)
+      }
 
       const response = await fetch(POSTER_API_URL, {
         method: 'POST',
@@ -595,6 +664,12 @@ function App() {
   const handleWorkEdit = (work) => {
     setSelectedView('generate')
     setPrompt(work.prompt || '')
+    if (work.requestOptions?.preferences) {
+      setGenerationPreferences((current) => ({
+        ...current,
+        ...work.requestOptions.preferences,
+      }))
+    }
     setError(null)
     focusPromptInput()
   }
@@ -616,6 +691,64 @@ function App() {
     if (lightboxWorkId === workId) {
       setLightboxWorkId(null)
     }
+  }
+
+  const handleReferenceImageChange = (file) => {
+    if (!file) {
+      return
+    }
+
+    if (!String(file.type || '').startsWith('image/')) {
+      setError(
+        createAppError('other', {
+          title: '参考图格式不支持',
+          message: '请上传 PNG 或 JPG 图片作为参考图。',
+        }),
+      )
+      return
+    }
+
+    if (Number(file.size || 0) > MAX_REFERENCE_IMAGE_SIZE) {
+      setError(
+        createAppError('other', {
+          title: '参考图过大',
+          message: '参考图大小不能超过 10MB。',
+        }),
+      )
+      return
+    }
+
+    if (referenceImage?.previewUrl) {
+      URL.revokeObjectURL(referenceImage.previewUrl)
+    }
+
+    setReferenceImage({
+      id: `reference-${Date.now()}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    })
+    setError(null)
+  }
+
+  const handleReferenceImageRemove = () => {
+    if (referenceImage?.previewUrl) {
+      URL.revokeObjectURL(referenceImage.previewUrl)
+    }
+
+    setReferenceImage(null)
+  }
+
+  const handlePreferenceChange = (field, nextValue) => {
+    setGenerationPreferences((current) => {
+      if (!(field in current)) {
+        return current
+      }
+
+      return {
+        ...current,
+        [field]: nextValue,
+      }
+    })
   }
 
   return (
@@ -678,6 +811,11 @@ function App() {
           quickActions={QUICK_ACTIONS}
           activeQuickAction={activeQuickAction}
           onQuickActionChange={setActiveQuickAction}
+          referenceImage={referenceImage}
+          onReferenceImageChange={handleReferenceImageChange}
+          onReferenceImageRemove={handleReferenceImageRemove}
+          preferences={generationPreferences}
+          onPreferenceChange={handlePreferenceChange}
         />
       </div>
 
