@@ -360,6 +360,27 @@
   margin-top: 12px;
 }
 
+.prompt-reference-placeholder {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.prompt-reference-placeholder strong {
+  color: var(--text-main);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.prompt-reference-placeholder span {
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
 .prompt-reference-card {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) auto;

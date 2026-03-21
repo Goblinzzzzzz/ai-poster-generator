@@ -334,8 +334,8 @@ export default function PromptInput({
               </div>
             </div>
 
-            {referenceImage ? (
-              <div className="prompt-reference-preview-list" aria-label="参考图预览">
+            <div className="prompt-reference-preview-list" aria-label="参考图预览">
+              {referenceImage ? (
                 <article className="prompt-reference-card">
                   <img src={referenceImage.previewUrl} alt="已上传参考图预览" />
                   <div className="prompt-reference-meta">
@@ -352,8 +352,13 @@ export default function PromptInput({
                     删除
                   </button>
                 </article>
-              </div>
-            ) : null}
+              ) : (
+                <div className="prompt-reference-placeholder">
+                  <strong>未添加参考图</strong>
+                  <span>上传后会在这里显示缩略预览，可用于后续风格和构图控制。</span>
+                </div>
+              )}
+            </div>
           </section>
 
           <section className="prompt-section prompt-section-mode">
