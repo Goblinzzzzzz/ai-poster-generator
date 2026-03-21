@@ -807,7 +807,9 @@ function App() {
       const previousPrompt = prompt
       const nextPrompt =
         nextResult.mode === 'append'
-          ? [prompt.trim(), nextResult.generatedText].filter(Boolean).join('\n')
+          ? [prompt.trim(), nextResult.prompt || nextResult.generatedText]
+              .filter(Boolean)
+              .join('\n')
           : nextResult.prompt
 
       setPrompt(nextPrompt)

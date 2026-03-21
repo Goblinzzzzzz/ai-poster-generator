@@ -65,14 +65,13 @@
 }
 
 .prompt-strategy-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   flex: 1 1 auto;
-  flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
 }
 
-.prompt-strategy-btn,
 .prompt-utility-btn,
 .prompt-assist-feedback-btn {
   display: inline-flex;
@@ -94,8 +93,6 @@
     transform 0.2s ease;
 }
 
-.prompt-strategy-btn:hover,
-.prompt-strategy-btn.is-active,
 .prompt-utility-btn:hover,
 .prompt-utility-btn.is-active,
 .prompt-assist-feedback-btn:hover {
@@ -104,6 +101,110 @@
   color: #1d4ed8;
   box-shadow: 0 10px 22px rgba(37, 99, 235, 0.1);
   transform: translateY(-1px);
+}
+
+.prompt-strategy-btn {
+  display: flex;
+  min-width: 0;
+  min-height: 64px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 18px;
+  text-align: left;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.prompt-strategy-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.prompt-strategy-copy strong {
+  color: var(--text-main);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.prompt-strategy-copy small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.prompt-strategy-mode {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding: 0.22rem 0.48rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text-soft);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.prompt-strategy-btn:hover,
+.prompt-strategy-btn.is-active {
+  transform: translateY(-1px);
+}
+
+.prompt-strategy-btn--scene {
+  border-color: rgba(125, 211, 252, 0.55);
+  background: linear-gradient(180deg, rgba(240, 249, 255, 0.98) 0%, rgba(224, 242, 254, 0.92) 100%);
+  box-shadow: 0 14px 28px rgba(14, 116, 144, 0.08);
+}
+
+.prompt-strategy-btn--scene:hover,
+.prompt-strategy-btn--scene.is-active {
+  border-color: rgba(14, 165, 233, 0.78);
+  box-shadow: 0 16px 32px rgba(14, 116, 144, 0.14);
+}
+
+.prompt-strategy-btn--scene .prompt-strategy-mode {
+  color: #0369a1;
+  background: rgba(224, 242, 254, 0.96);
+}
+
+.prompt-strategy-btn--reference {
+  border-color: rgba(251, 191, 36, 0.5);
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.99) 0%, rgba(254, 243, 199, 0.92) 100%);
+  box-shadow: 0 14px 28px rgba(180, 83, 9, 0.08);
+}
+
+.prompt-strategy-btn--reference:hover,
+.prompt-strategy-btn--reference.is-active {
+  border-color: rgba(245, 158, 11, 0.82);
+  box-shadow: 0 16px 32px rgba(180, 83, 9, 0.14);
+}
+
+.prompt-strategy-btn--reference .prompt-strategy-mode {
+  color: #b45309;
+  background: rgba(254, 243, 199, 0.96);
+}
+
+.prompt-strategy-btn--copy {
+  border-color: rgba(110, 231, 183, 0.58);
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.99) 0%, rgba(209, 250, 229, 0.92) 100%);
+  box-shadow: 0 14px 28px rgba(5, 150, 105, 0.08);
+}
+
+.prompt-strategy-btn--copy:hover,
+.prompt-strategy-btn--copy.is-active {
+  border-color: rgba(16, 185, 129, 0.8);
+  box-shadow: 0 16px 32px rgba(5, 150, 105, 0.14);
+}
+
+.prompt-strategy-btn--copy .prompt-strategy-mode {
+  color: #047857;
+  background: rgba(209, 250, 229, 0.96);
 }
 
 .prompt-strategy-btn:disabled,
@@ -459,6 +560,7 @@
   color: var(--text-main);
   font-size: 0.8rem;
   line-height: 1.7;
+  white-space: pre-line;
   word-break: break-word;
 }
 
@@ -495,6 +597,10 @@
     justify-content: flex-start;
   }
 
+  .prompt-strategy-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .prompt-floating-panel {
     width: min(360px, calc(100vw - 32px));
     right: 0;
@@ -515,5 +621,11 @@
   .prompt-reference-remove {
     grid-column: 1 / -1;
     width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .prompt-strategy-bar {
+    grid-template-columns: 1fr;
   }
 }

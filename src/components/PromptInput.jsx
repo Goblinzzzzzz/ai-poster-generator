@@ -36,9 +36,25 @@ const MODE_OPTIONS = [
 ]
 
 const ASSIST_ACTIONS = [
-  { id: 'scene', label: '场景强化' },
-  { id: 'reference', label: '参考图思路' },
-  { id: 'copy', label: '文案优化' },
+  {
+    id: 'scene',
+    label: '场景强化',
+    helper: '补齐场景、光线、构图、材质、色彩',
+    modeLabel: '回填 Prompt',
+  },
+  {
+    id: 'reference',
+    label: '参考图思路',
+    helperWithImage: '提炼构图、关系、色调和参考方向',
+    helperWithoutImage: '没上传图也会生成明确参考方向',
+    modeLabel: '追加方向',
+  },
+  {
+    id: 'copy',
+    label: '文案优化',
+    helper: '整理卖点、语气和风格统一',
+    modeLabel: '回填文案',
+  },
 ]
 
 const ASPECT_RATIO_OPTIONS = [
@@ -188,16 +204,29 @@ export default function PromptInput({
           <div className="prompt-strategy-bar" aria-label="主策略入口">
             {ASSIST_ACTIONS.map((action) => {
               const isBusy = activeAssistActionId === action.id
+              const helperText =
+                action.id === 'reference'
+                  ? referenceImage
+                    ? action.helperWithImage
+                    : action.helperWithoutImage
+                  : action.helper
 
               return (
                 <button
                   key={action.id}
                   type="button"
-                  className={`prompt-strategy-btn${isBusy ? ' is-active' : ''}`}
+                  className={`prompt-strategy-btn prompt-strategy-btn--${action.id}${
+                    isBusy ? ' is-active' : ''
+                  }`}
+                  data-action={action.id}
                   onClick={() => onAssistAction(action.id)}
                   disabled={Boolean(activeAssistActionId) || isGenerating}
                 >
-                  {isBusy ? '处理中...' : action.label}
+                  <span className="prompt-strategy-copy">
+                    <strong>{isBusy ? '处理中...' : action.label}</strong>
+                    <small>{helperText}</small>
+                  </span>
+                  <span className="prompt-strategy-mode">{action.modeLabel}</span>
                 </button>
               )
             })}
