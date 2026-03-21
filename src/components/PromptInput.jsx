@@ -31,6 +31,10 @@ export default function PromptInput({
   return (
     <div className="prompt-dock">
       <section className="prompt-panel">
+        <div className="prompt-guide">
+          描述你想要的画面，AI 帮你实现
+        </div>
+
         <div className="prompt-shortcuts" aria-label="快捷模式">
           {quickActions.map((action) => {
             const isActive = action.id === activeQuickAction
@@ -48,6 +52,18 @@ export default function PromptInput({
           })}
         </div>
 
+        <div className="prompt-features" aria-label="功能入口">
+          <button type="button" className="prompt-feature-btn">
+            🎨 图片生成
+          </button>
+          <button type="button" className="prompt-feature-btn">
+            🎬 视频生成
+          </button>
+          <button type="button" className="prompt-feature-btn">
+            ✨ 文案优化
+          </button>
+        </div>
+
         <label className="sr-only" htmlFor="jimeng-prompt-input">
           创作提示词
         </label>
@@ -55,7 +71,7 @@ export default function PromptInput({
         <textarea
           id="jimeng-prompt-input"
           className="prompt-textarea"
-          placeholder="描述主体、材质、光线、配色和构图，例如：高端护肤产品，玻璃器皿，柔和晨光，冷白配色，极简留白。"
+          placeholder="描述主体、场景、风格，例如：一只猫咪在窗台上晒太阳，温暖的光线，治愈系配色"
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}

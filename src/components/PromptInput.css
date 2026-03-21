@@ -36,11 +36,54 @@
   backdrop-filter: blur(18px);
 }
 
+.prompt-guide {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: center;
+  margin-bottom: 8px;
+  opacity: 0.85;
+}
+
 .prompt-shortcuts {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;  /* 从 10px 缩小 */
   margin-bottom: 10px;  /* 从 14px 缩小 */
+}
+
+.prompt-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.prompt-feature-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.9);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+  cursor: pointer;
+}
+
+.prompt-feature-btn:hover {
+  border-color: rgba(37, 99, 235, 0.22);
+  background: rgba(239, 245, 255, 0.95);
+  color: var(--accent-strong);
+  transform: translateY(-1px);
 }
 
 .prompt-shortcut {
