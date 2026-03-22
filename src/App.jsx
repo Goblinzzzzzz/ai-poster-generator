@@ -54,6 +54,8 @@ const DEFAULT_GENERATION_PREFERENCES = Object.freeze({
   clarity: 'auto',
   autoEnhance: true,
 })
+const DEFAULT_SELECTED_MODEL = 'doubao'
+const ALLOWED_SELECTED_MODELS = new Set(['doubao', 'gemini'])
 
 const SIZE_TEMPLATE_META = {
   mobile: {
@@ -320,6 +322,16 @@ const buildStyleDescriptor = (preferences) => {
   return `极简白色卡片式海报，${ratioLabel} 构图，主体突出，干净版式，品牌视觉感`
 }
 
+const normalizeSelectedModelValue = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+
+  if (ALLOWED_SELECTED_MODELS.has(normalized)) {
+    return normalized
+  }
+
+  return DEFAULT_SELECTED_MODEL
+}
+
 const createGeneratingWork = (prompt, requestOptions) => {
   const now = new Date()
   const sortTimestamp = now.getTime()
@@ -443,6 +455,7 @@ function App() {
   const [assistResult, setAssistResult] = useState(null)
   const [activeAssistActionId, setActiveAssistActionId] = useState('')
   const [selectedMode, setSelectedMode] = useState('agent')
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_SELECTED_MODEL)
   const referenceImagesRef = useRef(referenceImages)
   const activeView =
     NAV_ITEMS.find((item) => item.id === selectedView) || NAV_ITEMS[1]
@@ -554,12 +567,15 @@ function App() {
     })
   }
 
-  const handleGenerate = async (promptOverride) => {
+  const handleGenerate = async (promptOverride, options = {}) => {
     if (isGenerating) {
       return
     }
 
     const nextPrompt = typeof promptOverride === 'string' ? promptOverride : prompt
+    const nextSelectedModel = normalizeSelectedModelValue(
+      options.selectedModel || selectedModel,
+    )
     const trimmedPrompt = nextPrompt.trim()
 
     if (!trimmedPrompt) {
@@ -570,6 +586,7 @@ function App() {
 
     const requestOptions = {
       preferences: { ...generationPreferences },
+      selectedModel: nextSelectedModel,
       referenceImageNames: referenceImages.map((image) => image.file?.name || '').filter(Boolean),
     }
     const pendingWork = createGeneratingWork(trimmedPrompt, requestOptions)
@@ -592,6 +609,7 @@ function App() {
       formData.append('customPrompt', trimmedPrompt)
       formData.append('negativePrompt', DEFAULT_NEGATIVE_PROMPT)
       formData.append('logoPosition', 'auto')
+      formData.append('selectedModel', nextSelectedModel)
 
       referenceImages.forEach((image) => {
         if (image?.file) {
@@ -691,6 +709,9 @@ function App() {
   const handleWorkEdit = (work) => {
     setSelectedView('generate')
     setPrompt(work.prompt || '')
+    setSelectedModel(
+      normalizeSelectedModelValue(work.requestOptions?.selectedModel || selectedModel),
+    )
     if (work.requestOptions?.preferences) {
       setGenerationPreferences((current) => ({
         ...current,
@@ -703,7 +724,9 @@ function App() {
 
   const handleWorkRegenerate = async (work) => {
     handleWorkEdit(work)
-    await handleGenerate(work.prompt)
+    await handleGenerate(work.prompt, {
+      selectedModel: work.requestOptions?.selectedModel,
+    })
   }
 
   const handleWorkDelete = (workId) => {
@@ -871,6 +894,10 @@ function App() {
     setSelectedMode(modeId)
   }
 
+  const handleModelChange = (modelId) => {
+    setSelectedModel(normalizeSelectedModelValue(modelId))
+  }
+
   const handlePreferenceChange = (field, nextValue) => {
     setGenerationPreferences((current) => {
       if (!(field in current)) {
@@ -953,6 +980,8 @@ function App() {
           onAssistDismiss={handleAssistDismiss}
           selectedModeId={selectedMode}
           onModeChange={handleModeChange}
+          selectedModel={selectedModel}
+          onSelectedModelChange={handleModelChange}
         />
       </div>
 

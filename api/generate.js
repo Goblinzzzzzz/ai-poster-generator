@@ -2,8 +2,9 @@ import { mkdirSync } from "node:fs";
 import { readdir, stat, unlink } from "node:fs/promises";
 import { extname, join } from "node:path";
 
-import { generatePoster } from "../utils/doubao.js";
+import { generatePoster as generateDoubaoPoster } from "../utils/doubao.js";
 import { describeEnvValue, normalizeEnvValue } from "../utils/env.js";
+import { generatePoster as generateGeminiPoster } from "../utils/gemini.js";
 import {
   getSupportedClarityValues,
   isSupportedAspectRatio,
@@ -49,10 +50,33 @@ const ALLOWED_GENERATE_FIELDS = new Set([
   "logoPosition",
   "logoUrl",
   "referenceImageUrl",
+  "selectedModel",
 ]);
 const HTTP_URL_PROTOCOLS = new Set(["http:", "https:"]);
 const BOOLEAN_GENERATE_FIELDS = new Set(["autoEnhance"]);
 const DEBUG_SCOPE = "[api/generate.js]";
+const DEFAULT_SELECTED_MODEL = "doubao";
+const MODEL_SELECTION_ALIASES = new Map([
+  ["doubao", "doubao"],
+  ["doubao-seed", "doubao"],
+  ["doubao-seedream", "doubao"],
+  ["gemini", "gemini"],
+  ["google-gemini", "gemini"],
+  ["gemini-image", "gemini"],
+]);
+const ALLOWED_SELECTED_MODELS = new Set(["doubao", "gemini"]);
+
+const normalizeSelectedModel = (value) => {
+  const normalized = normalizeInputText(value, 80).toLowerCase();
+
+  if (!normalized) {
+    return DEFAULT_SELECTED_MODEL;
+  }
+
+  return MODEL_SELECTION_ALIASES.get(normalized) || normalized;
+};
+
+const getSelectedModelLabel = (model) => (model === "gemini" ? "Gemini" : "Doubao");
 
 const getRequestDebugId = (request) => String(request?.posterRequestId || "no-request-id");
 
@@ -213,6 +237,7 @@ export const validateGeneratePayload = (payload = {}) => {
   const rawAspectRatio = normalizeInputText(payload.aspectRatio, 40);
   const rawSizeTemplate = normalizeInputText(payload.sizeTemplate, 40);
   const rawClarity = normalizeInputText(payload.clarity, 40).toLowerCase();
+  const rawSelectedModel = normalizeSelectedModel(payload.selectedModel);
 
   if (rawAspectRatio && !isSupportedAspectRatio(rawAspectRatio)) {
     throw createApiError(400, "VALIDATION_ERROR", "aspectRatio 无效。", {
@@ -234,7 +259,15 @@ export const validateGeneratePayload = (payload = {}) => {
     });
   }
 
+  if (!ALLOWED_SELECTED_MODELS.has(rawSelectedModel)) {
+    throw createApiError(400, "VALIDATION_ERROR", "selectedModel 无效。", {
+      field: "selectedModel",
+      allowedValues: Array.from(ALLOWED_SELECTED_MODELS),
+    });
+  }
+
   const normalized = normalizePromptInput(payload);
+  normalized.selectedModel = rawSelectedModel;
 
   const sensitiveResult = filterSensitivePayload(normalized, { strict: true });
 
@@ -313,6 +346,7 @@ export const validateGeneratePayload = (payload = {}) => {
   }
 
   filteredPayload.autoEnhance = normalizeAutoEnhance(filteredPayload.autoEnhance, true);
+  filteredPayload.selectedModel = rawSelectedModel;
 
   return filteredPayload;
 };
@@ -436,7 +470,8 @@ export const createApiRouter = ({
   multer,
   uploadDir,
   apiKey,
-  generatePosterImpl = generatePoster,
+  generatePosterImpl = generateDoubaoPoster,
+  generateGeminiPosterImpl = generateGeminiPoster,
   rateLimitWindowMs = process.env.GENERATE_RATE_LIMIT_WINDOW_MS,
   rateLimitMaxRequests = process.env.GENERATE_RATE_LIMIT_MAX_REQUESTS,
   nowImpl = Date.now,
@@ -446,15 +481,17 @@ export const createApiRouter = ({
   }
 
   const normalizedApiKey = normalizeEnvValue(apiKey);
+  const normalizedGeminiApiKey = normalizeEnvValue(process.env.GEMINI_API_KEY);
 
-  if (!normalizedApiKey) {
-    throw new Error("createApiRouter 需要传入 apiKey。");
+  if (!normalizedApiKey && !normalizedGeminiApiKey) {
+    throw new Error("createApiRouter 需要传入至少一个可用的模型 API Key。");
   }
 
   ensureUploadDir(uploadDir);
   logDebug("createApiRouter initialized:", {
     uploadDir,
-    apiKey: describeEnvValue(normalizedApiKey),
+    doubaoApiKey: describeEnvValue(normalizedApiKey),
+    geminiApiKey: describeEnvValue(normalizedGeminiApiKey),
   });
 
   const storage = multer.diskStorage({
@@ -523,6 +560,7 @@ export const createApiRouter = ({
     const logoFile = pickFirstFile(request.files, "logo");
     const referenceImageFiles = pickFiles(request.files, "referenceImage");
     const requestId = getRequestDebugId(request);
+    let selectedModel = normalizeSelectedModel(request.body?.selectedModel);
 
     try {
       logDebug("handling /generate request:", {
@@ -545,6 +583,19 @@ export const createApiRouter = ({
         logoUrl,
         referenceImageUrl,
       });
+      selectedModel = normalizedPayload.selectedModel;
+      const selectedModelLabel = getSelectedModelLabel(selectedModel);
+      const selectedGenerator = selectedModel === "gemini" ? generateGeminiPosterImpl : generatePosterImpl;
+      const providerApiKey = selectedModel === "gemini" ? normalizeEnvValue(process.env.GEMINI_API_KEY) : normalizedApiKey;
+
+      if (!providerApiKey) {
+        throw createApiError(
+          503,
+          selectedModel === "gemini" ? "GEMINI_NOT_CONFIGURED" : "DOUBAO_NOT_CONFIGURED",
+          `${selectedModelLabel} API Key 未配置。`,
+        );
+      }
+
       const referenceImages = Array.from(
         new Set(
           [normalizedPayload.referenceImageUrl, ...uploadedReferenceImageUrls, normalizedPayload.logoUrl].filter(
@@ -557,6 +608,7 @@ export const createApiRouter = ({
 
       logDebug("prepared prompt and payload for generation:", {
         requestId,
+        selectedModel,
         normalizedPayload,
         promptSource,
         publicAssetUrls: {
@@ -566,12 +618,14 @@ export const createApiRouter = ({
         },
         promptLength: promptResult.prompt.length,
         negativePromptLength: promptResult.negativePrompt.length,
-        apiKey: describeEnvValue(normalizedApiKey),
+        doubaoApiKey: describeEnvValue(normalizedApiKey),
+        geminiApiKey: describeEnvValue(normalizeEnvValue(process.env.GEMINI_API_KEY)),
       });
 
       if ([logoUrl, referenceImageUrl, ...uploadedReferenceImageUrls].some((url) => /^http:\/\//i.test(url))) {
         logError("generated public upload URL is using http; upstream image fetch may fail behind Railway proxy:", {
           requestId,
+          selectedModel,
           logoUrl,
           referenceImageUrl,
           referenceImageUrls: uploadedReferenceImageUrls,
@@ -582,24 +636,27 @@ export const createApiRouter = ({
         });
       }
 
-      logDebug("calling generatePosterImpl:", {
+      logDebug("calling selected generation provider:", {
         requestId,
-        apiKey: describeEnvValue(normalizedApiKey),
+        selectedModel,
+        selectedModelLabel,
+        apiKey: describeEnvValue(providerApiKey),
         referenceImages,
       });
-      const generationResult = await generatePosterImpl({
+      const generationResult = await selectedGenerator({
         prompt: promptResult.prompt,
         negativePrompt: promptResult.negativePrompt,
         sizeTemplate: promptResult.parameterMapping.providerRequest.sizeTemplate,
         size: promptResult.parameterMapping.providerRequest.size,
         clarity: promptResult.parameterMapping.clarity.effective,
-        apiKey: normalizedApiKey,
+        apiKey: providerApiKey,
         referenceImages,
         requestId,
       });
 
-      logDebug("generatePosterImpl succeeded:", {
+      logDebug("selected generation provider succeeded:", {
         requestId,
+        selectedModel,
         provider: generationResult.provider,
         attempts: generationResult.attempts,
         imageUrlPreview: String(generationResult.imageUrl || "").slice(0, 120),
@@ -613,6 +670,7 @@ export const createApiRouter = ({
           prompt: promptResult.prompt,
           negativePrompt: promptResult.negativePrompt,
           provider: generationResult.provider,
+          selectedModel,
           attempts: generationResult.attempts,
           promptSpec: promptResult.promptSpec,
           effectiveProfile: promptResult.parameterMapping.effectiveProfile,
@@ -624,6 +682,7 @@ export const createApiRouter = ({
           metadata: {
             ...promptResult.metadata,
             usedCustomPrompt: promptResult.usedCustomPrompt,
+            selectedModel,
           },
         },
       });
@@ -631,7 +690,9 @@ export const createApiRouter = ({
       await Promise.all([safeUnlink(logoFile), ...referenceImageFiles.map((file) => safeUnlink(file))]);
       logError("generate route failed:", {
         requestId,
-        apiKey: describeEnvValue(normalizedApiKey),
+        selectedModel,
+        doubaoApiKey: describeEnvValue(normalizedApiKey),
+        geminiApiKey: describeEnvValue(normalizeEnvValue(process.env.GEMINI_API_KEY)),
         requestBody: request.body,
         uploads: {
           logoFile: logoFile
@@ -665,17 +726,18 @@ export const createApiRouter = ({
         return;
       }
 
+      const selectedModelLabel = getSelectedModelLabel(selectedModel);
       const message =
         typeof error?.message === "string" && error.message.trim()
           ? error.message.trim()
-          : "Doubao 图片生成失败，请稍后重试。";
+          : `${selectedModelLabel} 图片生成失败，请稍后重试。`;
 
       if (isDoubaoSensitiveError(message)) {
         next(
           createApiError(
             400,
             "SENSITIVE_PROMPT",
-            "当前描述仍触发了 Doubao 的内容安全拦截，请删减政治、暴力、成人或违法相关词语，改写为品牌、主体、材质、光线、配色等中性视觉描述后重试。",
+            "当前描述触发了内容安全拦截，请删减政治、暴力、成人或违法相关词语，改写为品牌、主体、材质、光线、配色等中性视觉描述后重试。",
           ),
         );
         return;
@@ -684,7 +746,13 @@ export const createApiRouter = ({
       next(
         createApiError(
           /未配置/.test(message) ? 503 : 502,
-          /未配置/.test(message) ? "DOUBAO_NOT_CONFIGURED" : "DOUBAO_GENERATION_FAILED",
+          /未配置/.test(message)
+            ? selectedModel === "gemini"
+              ? "GEMINI_NOT_CONFIGURED"
+              : "DOUBAO_NOT_CONFIGURED"
+            : selectedModel === "gemini"
+              ? "GEMINI_GENERATION_FAILED"
+              : "DOUBAO_GENERATION_FAILED",
           message,
         ),
       );

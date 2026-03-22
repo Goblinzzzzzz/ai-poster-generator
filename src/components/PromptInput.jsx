@@ -51,6 +51,10 @@ const CLARITY_OPTIONS = [
   { value: 'standard', label: '标准' },
   { value: 'high', label: '高清' },
 ]
+const MODEL_OPTIONS = [
+  { value: 'doubao', label: 'Doubao' },
+  { value: 'gemini', label: 'Gemini' },
+]
 
 const PROMPT_PLACEHOLDER =
   'Seedance 2.0 全能参考，上传参考、输入文字，创意无限可能'
@@ -167,6 +171,8 @@ export default function PromptInput({
   onAssistDismiss,
   selectedModeId,
   onModeChange,
+  selectedModel = 'doubao',
+  onSelectedModelChange,
 }) {
   const [openMenuId, setOpenMenuId] = useState(null)
   const [localModeId, setLocalModeId] = useState(selectedModeId || 'agent')
@@ -180,6 +186,8 @@ export default function PromptInput({
   const activeModeId = selectedModeId ?? localModeId
   const selectedMode =
     MODE_OPTIONS.find((mode) => mode.id === activeModeId) ?? MODE_OPTIONS[2]
+  const activeModel =
+    MODEL_OPTIONS.find((model) => model.value === selectedModel) ?? MODEL_OPTIONS[0]
   const hasReferenceImages = referenceImages.length > 0
 
   useEffect(() => {
@@ -489,7 +497,7 @@ export default function PromptInput({
                     )
                   }
                 >
-                  <span>自动</span>
+                  <span>{activeModel.label}</span>
                   <ChevronDownIcon className="prompt-action-icon" />
                 </button>
 
@@ -498,6 +506,24 @@ export default function PromptInput({
                     id="prompt-preference-menu"
                     className="prompt-floating-panel prompt-preference-menu"
                   >
+                    <div className="prompt-menu-group">
+                      <p className="prompt-menu-label">模型</p>
+                      <div className="prompt-inline-options">
+                        {MODEL_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`prompt-chip${
+                              selectedModel === option.value ? ' is-selected' : ''
+                            }`}
+                            onClick={() => onSelectedModelChange?.(option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="prompt-menu-group">
                       <p className="prompt-menu-label">比例</p>
                       <div className="prompt-chip-grid">
