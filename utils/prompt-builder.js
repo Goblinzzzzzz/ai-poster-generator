@@ -83,26 +83,8 @@ export const buildPrompt = (rawInput = {}) => {
   const hasLogoAsset = Boolean(input.logoUrl);
   const hasReferenceAsset = Boolean(input.referenceImageUrl);
   
-  // 基础提示词
-  let prompt = input.customPrompt || renderedPrompt.prompt || input.title || `${posterTypeLabel}视觉海报`;
-  
-  // 检测是否包含中文文字需求
-  const textPattern = /(?:写着|文字[：:]\s*|包含文字|显示文字|文案[：:]\s*)(['""「」『』]|)([^'"「」『」\n]{1,20})\1/gi;
-  const textMatches = prompt.match(textPattern);
-  
-  // 如果检测到文字需求，优化提示词
-  if (textMatches && textMatches.length > 0) {
-    // 提取文字内容
-    const texts = textMatches.map(match => {
-      const textMatch = match.match(/['""「」『』]|([^'"「」『」\n]{1,20})/g);
-      return textMatch ? textMatch.join('') : '';
-    }).filter(t => t.length > 0);
-    
-    // 如果文字较短（< 10 字），添加清晰度提示
-    if (texts.some(t => t.length < 10)) {
-      prompt += '，清晰文字，准确文字渲染';
-    }
-  }
+  // Use user input directly, no prompt enhancement or template prompt fallback.
+  let prompt = input.customPrompt || input.title || `${posterTypeLabel}视觉海报`;
   
   const negativePrompt =
     !parameterMapping.autoEnhance && input.negativePrompt
