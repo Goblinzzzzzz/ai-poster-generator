@@ -403,6 +403,16 @@ const pickFirstFile = (files, fieldName) => {
   return null;
 };
 
+const pickFiles = (files, fieldName) => {
+  const entry = files?.[fieldName];
+
+  if (!Array.isArray(entry)) {
+    return [];
+  }
+
+  return entry.filter(Boolean);
+};
+
 const normalizeUploadKind = (requestBody = {}, files = {}) => {
   const explicitKind = normalizeInputText(requestBody.kind, 40);
 
@@ -459,7 +469,7 @@ export const createApiRouter = ({
   const upload = multer({
     storage,
     limits: {
-      files: 2,
+      files: 6,
       fileSize: FILE_SIZE_LIMITS.referenceImage,
     },
     fileFilter: (_request, file, callback) => {
@@ -479,7 +489,7 @@ export const createApiRouter = ({
   const router = Router();
   const generateUpload = upload.fields([
     { name: "logo", maxCount: 1 },
-    { name: "referenceImage", maxCount: 1 },
+    { name: "referenceImage", maxCount: 4 },
   ]);
   const generateRateLimit = createGenerateRateLimitMiddleware({
     windowMs: rateLimitWindowMs,
@@ -489,7 +499,7 @@ export const createApiRouter = ({
   const standaloneUpload = upload.fields([
     { name: "file", maxCount: 1 },
     { name: "logo", maxCount: 1 },
-    { name: "referenceImage", maxCount: 1 },
+    { name: "referenceImage", maxCount: 4 },
   ]);
 
   const maybeHandleMultipart = (request, response, next) => {
@@ -511,7 +521,7 @@ export const createApiRouter = ({
 
   router.post("/generate", generateRateLimit, maybeHandleMultipart, async (request, response, next) => {
     const logoFile = pickFirstFile(request.files, "logo");
-    const referenceImageFile = pickFirstFile(request.files, "referenceImage");
+    const referenceImageFiles = pickFiles(request.files, "referenceImage");
     const requestId = getRequestDebugId(request);
 
     try {
@@ -525,17 +535,23 @@ export const createApiRouter = ({
         forwardedHost: request.get?.("x-forwarded-host"),
       });
       validateUploadedFile(logoFile, "logo");
-      validateUploadedFile(referenceImageFile, "referenceImage");
+      referenceImageFiles.forEach((file) => validateUploadedFile(file, "referenceImage"));
 
       const logoUrl = request.body?.logoUrl || (logoFile ? buildPublicFileUrl(request, logoFile) : "");
-      const referenceImageUrl =
-        request.body?.referenceImageUrl || (referenceImageFile ? buildPublicFileUrl(request, referenceImageFile) : "");
+      const uploadedReferenceImageUrls = referenceImageFiles.map((file) => buildPublicFileUrl(request, file));
+      const referenceImageUrl = request.body?.referenceImageUrl || uploadedReferenceImageUrls[0] || "";
       const normalizedPayload = validateGeneratePayload({
         ...request.body,
         logoUrl,
         referenceImageUrl,
       });
-      const referenceImages = [normalizedPayload.referenceImageUrl, normalizedPayload.logoUrl].filter(Boolean);
+      const referenceImages = Array.from(
+        new Set(
+          [normalizedPayload.referenceImageUrl, ...uploadedReferenceImageUrls, normalizedPayload.logoUrl].filter(
+            Boolean,
+          ),
+        ),
+      ).slice(0, 4);
       const promptResult = buildPrompt(normalizedPayload);
       const promptSource = normalizedPayload.customPrompt ? "custom-prompt-direct" : "template-fallback";
 
@@ -546,17 +562,19 @@ export const createApiRouter = ({
         publicAssetUrls: {
           logoUrl: normalizedPayload.logoUrl,
           referenceImageUrl: normalizedPayload.referenceImageUrl,
+          referenceImageUrls: uploadedReferenceImageUrls,
         },
         promptLength: promptResult.prompt.length,
         negativePromptLength: promptResult.negativePrompt.length,
         apiKey: describeEnvValue(normalizedApiKey),
       });
 
-      if ([logoUrl, referenceImageUrl].some((url) => /^http:\/\//i.test(url))) {
+      if ([logoUrl, referenceImageUrl, ...uploadedReferenceImageUrls].some((url) => /^http:\/\//i.test(url))) {
         logError("generated public upload URL is using http; upstream image fetch may fail behind Railway proxy:", {
           requestId,
           logoUrl,
           referenceImageUrl,
+          referenceImageUrls: uploadedReferenceImageUrls,
           protocol: request.protocol,
           forwardedProto: request.get?.("x-forwarded-proto"),
           host: request.get?.("host"),
@@ -601,6 +619,7 @@ export const createApiRouter = ({
           uploads: {
             logoUrl,
             referenceImageUrl,
+            referenceImageUrls: uploadedReferenceImageUrls,
           },
           metadata: {
             ...promptResult.metadata,
@@ -609,7 +628,7 @@ export const createApiRouter = ({
         },
       });
     } catch (error) {
-      await Promise.all([safeUnlink(logoFile), safeUnlink(referenceImageFile)]);
+      await Promise.all([safeUnlink(logoFile), ...referenceImageFiles.map((file) => safeUnlink(file))]);
       logError("generate route failed:", {
         requestId,
         apiKey: describeEnvValue(normalizedApiKey),
@@ -624,15 +643,13 @@ export const createApiRouter = ({
                 path: logoFile.path,
               }
             : null,
-          referenceImageFile: referenceImageFile
-            ? {
-                originalname: referenceImageFile.originalname,
-                mimetype: referenceImageFile.mimetype,
-                size: referenceImageFile.size,
-                filename: referenceImageFile.filename,
-                path: referenceImageFile.path,
-              }
-            : null,
+          referenceImageFiles: referenceImageFiles.map((file) => ({
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+            size: file.size,
+            filename: file.filename,
+            path: file.path,
+          })),
         },
         protocol: request.protocol,
         forwardedProto: request.get?.("x-forwarded-proto"),

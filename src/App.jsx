@@ -75,6 +75,7 @@ const SIZE_TEMPLATE_META = {
 }
 
 const MAX_REFERENCE_IMAGE_SIZE = 10 * 1024 * 1024
+const MAX_REFERENCE_IMAGE_COUNT = 4
 
 const MOBILE_NAV_ITEMS = NAV_ITEMS
 
@@ -432,7 +433,7 @@ function App() {
   const [error, setError] = useState(null)
   const [searchValue, setSearchValue] = useState('')
   const [timeFilter, setTimeFilter] = useState('all')
-  const [referenceImage, setReferenceImage] = useState(null)
+  const [referenceImages, setReferenceImages] = useState([])
   const [generationPreferences, setGenerationPreferences] = useState(
     DEFAULT_GENERATION_PREFERENCES,
   )
@@ -441,19 +442,22 @@ function App() {
   const [lightboxWorkId, setLightboxWorkId] = useState(null)
   const [assistResult, setAssistResult] = useState(null)
   const [activeAssistActionId, setActiveAssistActionId] = useState('')
-  const referenceImageRef = useRef(referenceImage)
+  const [selectedMode, setSelectedMode] = useState('agent')
+  const referenceImagesRef = useRef(referenceImages)
   const activeView =
     NAV_ITEMS.find((item) => item.id === selectedView) || NAV_ITEMS[1]
 
   useEffect(() => {
-    referenceImageRef.current = referenceImage
-  }, [referenceImage])
+    referenceImagesRef.current = referenceImages
+  }, [referenceImages])
 
   useEffect(
     () => () => {
-      if (referenceImageRef.current?.previewUrl) {
-        URL.revokeObjectURL(referenceImageRef.current.previewUrl)
-      }
+      referenceImagesRef.current?.forEach((image) => {
+        if (image?.previewUrl) {
+          URL.revokeObjectURL(image.previewUrl)
+        }
+      })
     },
     [],
   )
@@ -566,7 +570,7 @@ function App() {
 
     const requestOptions = {
       preferences: { ...generationPreferences },
-      referenceImageName: referenceImage?.file.name || '',
+      referenceImageNames: referenceImages.map((image) => image.file?.name || '').filter(Boolean),
     }
     const pendingWork = createGeneratingWork(trimmedPrompt, requestOptions)
 
@@ -589,9 +593,11 @@ function App() {
       formData.append('negativePrompt', DEFAULT_NEGATIVE_PROMPT)
       formData.append('logoPosition', 'auto')
 
-      if (referenceImage?.file) {
-        formData.append('referenceImage', referenceImage.file)
-      }
+      referenceImages.forEach((image) => {
+        if (image?.file) {
+          formData.append('referenceImage', image.file)
+        }
+      })
 
       const response = await fetch(POSTER_API_URL, {
         method: 'POST',
@@ -714,7 +720,7 @@ function App() {
     }
   }
 
-  const handleReferenceImageChange = (file) => {
+  const handleReferenceImageAdd = (file) => {
     if (!file) {
       return
     }
@@ -739,25 +745,35 @@ function App() {
       return
     }
 
-    if (referenceImage?.previewUrl) {
-      URL.revokeObjectURL(referenceImage.previewUrl)
+    if (referenceImages.length >= MAX_REFERENCE_IMAGE_COUNT) {
+      setError(
+        createAppError('other', {
+          title: '已达到上限',
+          message: '最多支持 4 张参考图',
+        }),
+      )
+      return
     }
 
-    setReferenceImage({
-      id: `reference-${Date.now()}`,
+    const newImage = {
+      id: `reference-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       file,
       previewUrl: URL.createObjectURL(file),
-    })
+    }
+
+    setReferenceImages((current) => [...current, newImage])
     setAssistResult(null)
     setError(null)
   }
 
-  const handleReferenceImageRemove = () => {
-    if (referenceImage?.previewUrl) {
-      URL.revokeObjectURL(referenceImage.previewUrl)
+  const handleReferenceImageRemove = (id) => {
+    const image = referenceImages.find((currentImage) => currentImage.id === id)
+
+    if (image?.previewUrl) {
+      URL.revokeObjectURL(image.previewUrl)
     }
 
-    setReferenceImage(null)
+    setReferenceImages((current) => current.filter((currentImage) => currentImage.id !== id))
     setAssistResult(null)
   }
 
@@ -777,9 +793,10 @@ function App() {
       } else if (actionId === 'copy') {
         nextResult = optimizePromptCopy(prompt)
       } else if (actionId === 'reference') {
+        const primaryReferenceImage = referenceImages[0] || null
         const referenceMeta =
-          (await getReferenceImageMeta(referenceImage)) ||
-          (referenceImage
+          (await getReferenceImageMeta(primaryReferenceImage)) ||
+          (primaryReferenceImage
             ? {
                 orientation: 'square',
                 orientationLabel: '参考图',
@@ -848,6 +865,10 @@ function App() {
 
   const handleAssistDismiss = () => {
     setAssistResult(null)
+  }
+
+  const handleModeChange = (modeId) => {
+    setSelectedMode(modeId)
   }
 
   const handlePreferenceChange = (field, nextValue) => {
@@ -920,8 +941,8 @@ function App() {
           onRetry={handleRetryGenerate}
           isGenerating={isGenerating}
           error={error}
-          referenceImage={referenceImage}
-          onReferenceImageChange={handleReferenceImageChange}
+          referenceImages={referenceImages}
+          onReferenceImageAdd={handleReferenceImageAdd}
           onReferenceImageRemove={handleReferenceImageRemove}
           preferences={generationPreferences}
           onPreferenceChange={handlePreferenceChange}
@@ -930,6 +951,8 @@ function App() {
           onAssistAction={handleAssistAction}
           onAssistUndo={handleAssistUndo}
           onAssistDismiss={handleAssistDismiss}
+          selectedModeId={selectedMode}
+          onModeChange={handleModeChange}
         />
       </div>
 

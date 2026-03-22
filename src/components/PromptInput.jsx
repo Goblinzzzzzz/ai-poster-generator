@@ -155,19 +155,22 @@ export default function PromptInput({
   onRetry,
   isGenerating,
   error,
-  referenceImage,
-  onReferenceImageChange,
+  referenceImages = [],
+  onReferenceImageAdd,
   onReferenceImageRemove,
   preferences,
   onPreferenceChange,
   activeAssistActionId,
+  assistResult,
   onAssistAction,
+  onAssistUndo,
   onAssistDismiss,
   selectedModeId,
   onModeChange,
 }) {
   const [openMenuId, setOpenMenuId] = useState(null)
   const [localModeId, setLocalModeId] = useState(selectedModeId || 'agent')
+  const [isImagesExpanded, setIsImagesExpanded] = useState(false)
   const modeMenuRef = useRef(null)
   const preferenceMenuRef = useRef(null)
   const inspirationMenuRef = useRef(null)
@@ -177,6 +180,7 @@ export default function PromptInput({
   const activeModeId = selectedModeId ?? localModeId
   const selectedMode =
     MODE_OPTIONS.find((mode) => mode.id === activeModeId) ?? MODE_OPTIONS[2]
+  const hasReferenceImages = referenceImages.length > 0
 
   useEffect(() => {
     if (selectedModeId) {
@@ -254,6 +258,12 @@ export default function PromptInput({
     resizeTextarea()
   }, [value])
 
+  useEffect(() => {
+    if (!hasReferenceImages) {
+      setIsImagesExpanded(false)
+    }
+  }, [hasReferenceImages])
+
   const handlePromptChange = (event) => {
     onChange(event.target.value)
     requestAnimationFrame(resizeTextarea)
@@ -286,7 +296,7 @@ export default function PromptInput({
     const [nextFile] = Array.from(event.target.files || [])
 
     if (nextFile) {
-      onReferenceImageChange(nextFile)
+      onReferenceImageAdd(nextFile)
     }
 
     event.target.value = ''
@@ -318,27 +328,83 @@ export default function PromptInput({
 
               <button
                 type="button"
-                className={`prompt-reference-card${referenceImage ? ' is-active' : ''}`}
-                onClick={() => uploadInputRef.current?.click()}
-                aria-label={referenceImage ? '更换参考图' : '上传参考图'}
+                className={`prompt-reference-card${hasReferenceImages ? ' is-active' : ''}${
+                  isImagesExpanded ? ' is-expanded' : ''
+                }`}
+                onClick={() => {
+                  if (!hasReferenceImages) {
+                    uploadInputRef.current?.click()
+                    return
+                  }
+
+                  setIsImagesExpanded((current) => !current)
+                }}
+                aria-label={hasReferenceImages ? '查看或管理参考图' : '上传参考图'}
               >
-                <span className="prompt-reference-media" aria-hidden="true">
-                  {referenceImage ? (
-                    <img src={referenceImage.previewUrl} alt="" />
-                  ) : (
-                    <PlusIcon className="prompt-reference-plus" />
-                  )}
-                </span>
-                <span className="prompt-reference-copy">
-                  {referenceImage ? '已上传参考' : '上传参考'}
-                </span>
+                {!hasReferenceImages ? (
+                  <>
+                    <span className="prompt-reference-media" aria-hidden="true">
+                      <PlusIcon className="prompt-reference-plus" />
+                    </span>
+                    <span className="prompt-reference-copy">上传参考</span>
+                  </>
+                ) : isImagesExpanded ? (
+                  <div className="prompt-image-grid" onClick={(event) => event.stopPropagation()}>
+                    {referenceImages.map((image) => (
+                      <div key={image.id} className="prompt-image-item">
+                        <img src={image.previewUrl} alt="参考图" />
+                        <button
+                          type="button"
+                          className="prompt-image-remove"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onReferenceImageRemove(image.id)
+                          }}
+                          aria-label="删除参考图"
+                        >
+                          <CloseIcon className="prompt-image-remove-icon" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {referenceImages.length < 4 ? (
+                      <button
+                        type="button"
+                        className="prompt-image-add"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          uploadInputRef.current?.click()
+                        }}
+                        aria-label="添加更多参考图"
+                      >
+                        <PlusIcon className="prompt-image-add-icon" />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
+                    <span className="prompt-reference-media" aria-hidden="true">
+                      <img
+                        src={referenceImages[0]?.previewUrl}
+                        alt="参考图"
+                        className="preview-img"
+                      />
+                    </span>
+                    <span className="prompt-reference-copy">已上传 {referenceImages.length}/4</span>
+                    <div className="prompt-image-dots" aria-hidden="true">
+                      {referenceImages.map((image) => (
+                        <span key={image.id} className="dot" />
+                      ))}
+                    </div>
+                  </>
+                )}
               </button>
 
-              {referenceImage ? (
+              {referenceImages.length === 1 ? (
                 <button
                   type="button"
                   className="prompt-reference-remove"
-                  onClick={onReferenceImageRemove}
+                  onClick={() => onReferenceImageRemove(referenceImages[0].id)}
                   aria-label="删除参考图"
                 >
                   <CloseIcon className="prompt-reference-remove-icon" />
@@ -521,7 +587,7 @@ export default function PromptInput({
                           {action.label}
                         </span>
                         <small>
-                          {referenceImage
+                          {hasReferenceImages
                             ? action.helper || action.helperWithImage
                             : action.helperWithoutImage || action.helper}
                         </small>
@@ -549,6 +615,27 @@ export default function PromptInput({
             </button>
           </div>
         </div>
+
+        {assistResult?.canUndo ? (
+          <div className="prompt-undo-bar">
+            <button
+              type="button"
+              className="prompt-undo-btn"
+              onClick={onAssistUndo}
+            >
+              <svg viewBox="0 0 20 20" fill="none" className="prompt-undo-icon">
+                <path
+                  d="M4 10h12m0 0l-4-4m4 4l-4 4"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>撤回</span>
+            </button>
+          </div>
+        ) : null}
 
         <ErrorAlert error={error} onRetry={onRetry} />
       </section>
