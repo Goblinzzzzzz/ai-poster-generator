@@ -82,7 +82,7 @@ export const buildPrompt = (rawInput = {}) => {
   const logoPositionLabel = LOGO_POSITIONS[input.logoPosition] || "合适位置";
   const hasLogoAsset = Boolean(input.logoUrl);
   const hasReferenceAsset = Boolean(input.referenceImageUrl);
-  const prompt = renderedPrompt.prompt || input.customPrompt || input.title || `${posterTypeLabel}视觉海报`;
+  const prompt = input.customPrompt || renderedPrompt.prompt || input.title || `${posterTypeLabel}视觉海报`;
   const negativePrompt =
     !parameterMapping.autoEnhance && input.negativePrompt
       ? input.negativePrompt
